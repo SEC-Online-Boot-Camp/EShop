@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.db
+.pytest_cache/
+.coverage
+htmlcov/
+.mutmut-cache
+
+# 注意：.env はこのリポジトリでは意図的に除外していません。
+# No.1セキュリティ演習の教材として .env をそのまま配布するためです。

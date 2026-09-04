@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
-from src.app.database import Base
+from app.database import Base
 
 
 class User(Base):
@@ -35,11 +35,41 @@ class CartItem(Base):
     product = relationship("Product")
 
 
+class Cart(Base):
+    """カート単位の状態を持つテーブル。
+
+    明細（CartItem）は既存どおり user_id で紐づけたままとし、
+    ここでは「いまプレビュー中のクーポン」だけを保持する。
+    """
+
+    __tablename__ = "carts"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    applied_coupon_code = Column(String, nullable=True)
+
+
+class Coupon(Base):
+    __tablename__ = "coupons"
+    id = Column(Integer, primary_key=True)
+    code = Column(String, unique=True, index=True, nullable=False)
+    type = Column(String, nullable=False)
+    value = Column(Integer, nullable=False)
+    max_discount_amount = Column(Integer, nullable=True)
+    min_purchase_amount = Column(Integer, default=0, nullable=False)
+    excluded_categories = Column(JSON, nullable=True)
+    usage_limit = Column(Integer, nullable=True)
+    used_count = Column(Integer, default=0, nullable=False)
+    valid_from = Column(DateTime, nullable=False)
+    valid_to = Column(DateTime, nullable=False)
+
+
 class Order(Base):
     __tablename__ = "orders"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     subtotal = Column(Integer, nullable=False)
+    coupon_code = Column(String, nullable=True)
+    discount_amount = Column(Integer, default=0, nullable=False)
     status = Column(String, default="confirmed")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     user = relationship("User", back_populates="orders")

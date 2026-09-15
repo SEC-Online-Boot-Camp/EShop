@@ -38,6 +38,25 @@ class CartItemOut(BaseModel):
 class CartOut(BaseModel):
     items: list[CartItemOut]
     subtotal: int
+    applied_coupon_code: str | None = None
+    discount_amount: int = 0
+    total: int = 0
+
+
+class CouponApplyRequest(BaseModel):
+    coupon_code: str
+
+
+class CouponApplyOut(BaseModel):
+    coupon_code: str
+    eligible_subtotal: int
+    discount_amount: int
+    subtotal: int
+    total: int
+
+
+class CheckoutRequest(BaseModel):
+    expected_total: int | None = None
 
 
 class OrderItemOut(BaseModel):
@@ -53,5 +72,7 @@ class OrderOut(BaseModel):
     id: int
     status: str
     subtotal: int
+    coupon_code: str | None = None
+    discount_amount: int = 0
     items: list[OrderItemOut]
     created_at: datetime

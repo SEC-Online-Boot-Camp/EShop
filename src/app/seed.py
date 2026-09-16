@@ -121,7 +121,7 @@ def seed():
             ),
         ]
         # ユーザー・商品とクーポンは別々に判定する。No.1・No.2で作った
-        # ecommerce.db がすでにある状態で src-add を適用しても、
+        # ecommerce.db がすでにある状態で No3 ブランチに切り替えても、
         # クーポンだけは投入されるようにするため。
         created = []
         if db.query(User).first() is None:

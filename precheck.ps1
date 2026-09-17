@@ -7,7 +7,10 @@
     管理者権限は不要。機材の状態を変えるステップは <設定変更> と表示され、
     既定はスキップで、明示的に y を押したときだけ実行する。
 
-    リハーサル機での取得（受講者が使う main / No3 は取得されない）
+    このブランチは公開リポジトリにあり、受講者からも参照できる（普通の git clone でも
+    リモート追跡ブランチとして付いてくる）。受講者に伏せる情報はここに書かない。
+
+    リハーサル機での取得（作業ツリーに main / No3 は展開されない）
 
         git clone -b rehearsal --single-branch https://github.com/SEC-Online-Boot-Camp/EShop.git EShop-rehearsal
         cd EShop-rehearsal
@@ -138,9 +141,14 @@ function Get-Reachability([string]$Text) {
     foreach ($line in ($Text -split "`n")) {
         if ($line -match '^\s*(https\S+)\s+(.+?)\s*$') {
             $v = $Matches[2].Trim()
-            if ($v -match '^\d+$') {
-                if ($v -eq '407') { $auth = $true; $bad++ }
-                elseif ($v -match '^(200|301|302|401|403|404)$') { $ok++ }
+            # 数字だけの行（curl）と、例外メッセージ中の (403) 等（Invoke-WebRequest）の両方を拾う。
+            # 3-3のとおり 403 や 404 は「到達成功」なので、文面で返ってきても落ちと数えない。
+            $code = $null
+            if ($v -match '^\d+$') { $code = $v }
+            elseif ($v -match '\((\d{3})\)') { $code = $Matches[1] }
+            if ($code) {
+                if ($code -eq '407') { $auth = $true; $bad++ }
+                elseif ($code -match '^(200|301|302|401|403|404)$') { $ok++ }
                 else { $bad++ }
             } else {
                 $bad++
@@ -501,21 +509,14 @@ function Set-StepList {
         } `
         -Hint {
             param($text)
-            $bad = @()
-            foreach ($line in ($text -split "`n")) {
-                if ($line -match '^\s*(https\S+)\s+(\S+)\s*$') {
-                    $code = $Matches[2]
-                    if ($code -notmatch '^(200|301|302|401|403|404)$') { $bad += "$($Matches[1]) => $code" }
-                }
-            }
-            if ($bad.Count -gt 0) {
-                Write-Host '  → 到達できていないホスト（10章の申請対象）' -ForegroundColor Red
-                $bad | ForEach-Object { Write-Host "     $_" -ForegroundColor Red }
+            $r = Get-Reachability $text
+            if ($r.Auth) { Write-Host '  → 407（認証付きプロキシ）。IT部門へ申請（10章）' -ForegroundColor Red; return 'NG' }
+            if ($r.Bad -gt 0) {
+                Write-Host "  → 到達できていないホストが $($r.Bad) 件ある（10章の申請対象）" -ForegroundColor Red
                 return 'NG'
-            } else {
-                Write-Host '  → 全ホストがTLSまで到達している' -ForegroundColor Magenta
-                return 'OK'
             }
+            Write-Host "  → $($r.OK) ホストすべてTLSまで到達している" -ForegroundColor Magenta
+            return 'OK'
         }
 
     New-Step -Id '3-4-2' -Ch '3' -Title '到達性の確認（システム設定の経路 / ブラウザ・VS Code相当）' -Kind auto `
@@ -529,11 +530,15 @@ function Set-StepList {
         } `
         -Hint {
             param($text)
-            Write-Host '  → curl(環境変数) と PowerShell(システム設定) の組み合わせで読む' -ForegroundColor Magenta
-            Write-Host '     OK / OK  両系統とも設定済み。そのまま進める' -ForegroundColor Magenta
-            Write-Host '     NG / OK  システム設定のみのPAC運用。環境変数の追加が必要（ケースC）' -ForegroundColor Magenta
-            Write-Host '     OK / NG  環境変数のみ設定済み。ブラウザ側を 3-5 で必ず確認する' -ForegroundColor Magenta
-            Write-Host '     NG / NG  遮断か未設定。3-2-3のアドレスでケースCを試す' -ForegroundColor Magenta
+            Write-Host '  → 403や404は「到達成功」。文面で返ってきても落ちとは数えない（3-3）' -ForegroundColor DarkGray
+            $r = Get-Reachability $text
+            if ($r.Auth) { Write-Host '  → 407（認証付きプロキシ）。IT部門へ申請（10章）' -ForegroundColor Red; return 'NG' }
+            if ($r.Bad -gt 0) {
+                Write-Host "  → 到達できていないホストが $($r.Bad) 件ある。3-4-1との食い違いは3-6-aで判定する" -ForegroundColor Red
+                return 'NG'
+            }
+            Write-Host "  → $($r.OK) ホストすべてTLSまで到達している" -ForegroundColor Magenta
+            return 'OK'
         }
 
     New-Step -Id '3-4-3' -Ch '3' -Title '教材の配布リンク（OneDrive）の到達性' -Kind ask `
@@ -869,10 +874,23 @@ function Set-StepList {
             param($text)
             $hasCoupon = $text -match 'coupon\.py'
             $hasDocs = $text -match '要件整理メモ|クーポンAPI設計書'
-            if ($hasCoupon -and $hasDocs) { Write-Host '  → 両方ある。実行場所が別であることを手順書に反映する（11章）' -ForegroundColor Magenta; return 'OK' }
-            if (-not $hasCoupon) { Write-Host '  → app\coupon.py が無い。No3への切り替えを確認する' -ForegroundColor Red }
-            if (-not $hasDocs) { Write-Host '  → docs の成果物が無い。4-4-01を実施する' -ForegroundColor Red }
-            return 'NG'
+            if (-not $hasCoupon) {
+                Write-Host '  → app\coupon.py が無い。No3への切り替え（4-4-02）を確認する' -ForegroundColor Red
+                return 'NG'
+            }
+            if ($hasDocs) {
+                Write-Host '  → 両方ある。実行場所が別であることを手順書に反映する（11章）' -ForegroundColor Magenta
+                return 'OK'
+            }
+            # 4-4-01 を実施していなければ docs は無いのが当然なので、NGではなく保留にする
+            $placed = $script:Results | Where-Object { $_.Id -eq '4-4-01' -and $_.Verdict -eq 'OK' }
+            if ($placed) {
+                Write-Host '  → 4-4-01は実施済みなのに docs の成果物が無い。配置先を確認する' -ForegroundColor Red
+                return 'NG'
+            }
+            Write-Host '  → docs が無い。4-4-01（成果物の配置）を実施していないため判定できない' -ForegroundColor Yellow
+            Write-Host '     coupon.py は見つかっているので、切り替え自体は成功している' -ForegroundColor Yellow
+            return '保留'
         }
 
     New-Step -Id '4-4-04' -Ch '4' -Title 'DBの作り直しとシード投入' -Kind auto -TimeKey 'seed-no3' `
@@ -937,10 +955,11 @@ function Set-StepList {
   03-03 の手順で次を実行する:
     .venv\Scripts\pytest.exe --tb=no -q -rf --disable-warnings
 
-  配布コードには意図的な欠陥が4件仕込んである。失敗が出るのが正常。
+  配布コードには意図的な欠陥が仕込まれている。失敗が出るのが正常。
   最後に引数なしの pytest が全件PASSする状態まで到達できるかを見る。
+  （件数は受講者に伏せるため、ここには書かない。事前確認書の4-4を見る）
 "@ `
-        -Expect '欠陥4件に由来する失敗が出て、最後に全件PASSまで到達できる'
+        -Expect '意図的な欠陥に由来する失敗が出て、最後に全件PASSまで到達できる（件数は事前確認書の4-4）'
 
     # ====================== 5章 Claude Codeの動作確認 ======================
 
@@ -990,30 +1009,59 @@ function Set-StepList {
 
     New-Step -Id '7-1' -Ch '7' -Title 'リポジトリに差分が残っていないか' -Kind auto `
         -Purpose '抽象化済みの .env が共有リポジトリに入ると以降の受講者の演習が成立しない' `
-        -Expect '.env / .gitignore / CLAUDE.md に差分が無く、未pushのコミットも無い' `
-        -Show 'git status ; git diff -- .env .gitignore ; git log origin/main..HEAD ; git remote -v' `
+        -Expect '追跡ファイル（.env / .gitignore / CLAUDE.md）に変更が無く、未pushのコミットも無い' `
+        -Show @"
+  git status --porcelain
+  git diff --name-only -- .env .gitignore
+  git log @{u}..HEAD --oneline     # 追跡ブランチとの差（No3にいてもmainと比べない）
+  git remote -v
+"@ `
         -Cmd {
             Invoke-InRepo {
-                '--- git status ---'; git status 2>&1
-                '--- git diff -- .env .gitignore ---'; git diff -- .env .gitignore 2>&1
-                '--- git log origin/main..HEAD ---'; git log origin/main..HEAD --oneline 2>&1
-                '--- git remote -v ---'; git remote -v 2>&1
+                $enc = if ($script:ConsoleCodePage -eq 65001) { 'UTF-8' } else { "CP$($script:ConsoleCodePage)" }
+                $all = @(git status --porcelain 2>&1 | Where-Object { $_ })
+                $tracked = @($all | Where-Object { $_ -notmatch '^\?\?' })
+                $untracked = @($all | Where-Object { $_ -match '^\?\?' })
+                '--- 追跡ファイルの変更（.env・.gitignore・CLAUDE.md など）---'
+                if ($tracked.Count -eq 0) { '（変更なし）' } else { $tracked }
+                '--- 未追跡ファイル（演習の副産物。クローン削除で消える）---'
+                if ($untracked.Count -eq 0) { '（なし）' } else { $untracked }
+                '--- .env / .gitignore の差分 ---'
+                $df = @(git diff --name-only -- .env .gitignore 2>&1 | Where-Object { $_ })
+                if ($df.Count -eq 0) { '（差分なし）' } else { $df }
+                '--- 未pushのコミット ---'
+                $up = (git rev-parse --abbrev-ref '@{u}' 2>&1)
+                $log = @()
+                if ($LASTEXITCODE -eq 0 -and $up -notmatch 'fatal') {
+                    "追跡ブランチ: $up"
+                    $log = @(git -c i18n.logOutputEncoding=$enc log '@{u}..HEAD' --oneline 2>&1 | Where-Object { $_ })
+                    if ($log.Count -eq 0) { '（なし）' } else { $log }
+                } else {
+                    '追跡ブランチが無い（push先が設定されていない）'
+                }
+                '--- push先 ---'
+                git remote -v 2>&1
+                ''
+                if ($tracked.Count -gt 0 -or $log.Count -gt 0) { '結果: 追跡ファイルの変更または未pushのコミットがある' }
+                else { '結果: 追跡ファイルの変更なし・未pushなし' }
             }
         } `
         -Hint {
             param($text)
             Write-Host '  → リハーサル機からは絶対にpushしない。差分は破棄するか、クローンごと削除する（7-3-a）' -ForegroundColor Magenta
             if ($text -match 'リポジトリがまだ無い') { return $null }
-            $dirty = ($text -match '(?m)^\s*(modified|new file|deleted|renamed|変更|新規|削除):') -or
-                     ($text -match '(?m)^\?\?') -or
-                     ($text -match '--- git diff[\s\S]*?\n\S')
-            $unpushed = $text -match '(?m)^--- git log origin/main\.\.HEAD ---\s*\n\s*\S'
-            if ($dirty -or $unpushed) {
-                Write-Host '  → 差分または未pushのコミットがある。破棄するかクローンごと消す' -ForegroundColor Red
+            if ($text -match '結果: 追跡ファイルの変更なし・未pushなし') {
+                Write-Host '  → 追跡ファイルの変更も未pushのコミットも無い' -ForegroundColor Magenta
+                if ($text -notmatch '未追跡ファイル[\s\S]*?（なし）') {
+                    Write-Host '     未追跡ファイル（docs・生成物など）はクローンごと削除して消す（7-3-a）' -ForegroundColor DarkGray
+                }
+                return 'OK'
+            }
+            if ($text -match '結果: 追跡ファイルの変更または未pushのコミットがある') {
+                Write-Host '  → 追跡ファイルに変更、または未pushのコミットがある。破棄するかクローンごと消す' -ForegroundColor Red
                 return 'NG'
             }
-            Write-Host '  → 追跡対象の差分も未pushのコミットも無い' -ForegroundColor Magenta
-            return 'OK'
+            return $null
         }
 
     New-Step -Id '7-2-a' -Ch '7' -Title '認証情報のログアウト（手動）' -Kind manual `

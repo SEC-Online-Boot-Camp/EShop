@@ -77,7 +77,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '582967c3（2026-09-17 配備）'
+$script:ScriptVersion = '3f2c1451（2026-09-17 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -174,8 +174,10 @@ function Hide-NetworkInfo([string]$Text) {
     foreach ($r in ($script:Redactions | Sort-Object { $_.Text.Length } -Descending)) {
         $pat = [regex]::Escape($r.Text)
         # NO_PROXY は「.社内ドメイン」の形で書かれる。手前のラベルを残すと社内のホスト名が
-        # 部分的に漏れる（<ホスト名>.社内ドメイン → <ホスト名>だけ残る）ので、ラベルごと置き換える
-        if ($r.Text.StartsWith('.')) { $pat = '[A-Za-z0-9_-]+' + $pat }
+        # 部分的に漏れる（<ホスト名>.社内ドメイン → <ホスト名>だけ残る）ので、ラベルごと置き換える。
+        # ドットを含め 0文字以上にしてあるのは、多段のサブドメイン（a.b.社内ドメイン）と、
+        # 手前にラベルが無い裸のサフィックス（除外リストの表記そのもの）の両方を拾うため。
+        if ($r.Text.StartsWith('.')) { $pat = '[A-Za-z0-9_.-]*' + $pat }
         $Text = $Text -replace $pat, $r.Label
     }
     # IPアドレス（CIDR・ポート付きも）。127.0.0.1 は残す
@@ -713,8 +715,10 @@ function Set-StepList {
             irm https://claude.ai/install.ps1 | iex
             # インストーラはUser PATHを更新するが、起動済みのこのプロセスには反映されない。
             # 直後の 4-3-02 が「入っていない」と誤って見えるのを防ぐ。
-            $env:PATH = [Environment]::GetEnvironmentVariable('PATH', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH', 'User')
-            'このプロセスのPATHを読み直した（Machine + User）'
+            # 丸ごと置き換えるとプロセス固有のPATH（有効化済みのvenv など）が落ちるため、後ろに足す。
+            $add = @([Environment]::GetEnvironmentVariable('PATH', 'Machine'), [Environment]::GetEnvironmentVariable('PATH', 'User')) -ne $null
+            $env:PATH = (@($env:PATH.TrimEnd(';')) + $add) -join ';'
+            'このプロセスのPATHに Machine と User の分を足した'
         } `
         -SkipImpact 'スキップすると 4-3-02〜4-3-04（版の記録・ログイン・VS Code拡張）が実施できない'
 
@@ -723,7 +727,9 @@ function Set-StepList {
         -Cmd { claude --version } `
         -Hint {
             param($text)
-            if ($text -match '\d+\.\d+') { Write-Host '  → 版を取得できた' -ForegroundColor Magenta; return 'OK' }
+            # Hintが読むのは伏せ字を当てたあとのテキストなので、4つドット区切りの版は
+            # IPアドレスとみなされて <アドレス> に潰れる。そのときも「取れている」と扱う。
+            if ($text -match '(?m)^\s*(\d+\.\d+|<アドレス>)') { Write-Host '  → 版を取得できた' -ForegroundColor Magenta; return 'OK' }
             Write-Host '  → claude を解決できない。導入に失敗したか、PATHが通っていない' -ForegroundColor Red
             Write-Host '     4-3-01 をスキップしたならここもNGでよい。実行したなら新しいターミナルで試す' -ForegroundColor Red
             return 'NG'
@@ -945,7 +951,13 @@ function Set-StepList {
                     }
                 } finally {
                     if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force; 'サーバーを停止した' }
+                    # ハンドルが解放される前に消すと共有違反で失敗し、ログが貸与機に残る。
+                    # -ErrorAction SilentlyContinue にしてあるので失敗しても気づけないため、先に待つ。
+                    if ($proc) { $proc.WaitForExit(3000) | Out-Null }
                     Remove-Item $log, $err -Force -ErrorAction SilentlyContinue
+                    foreach ($f in $log, $err) {
+                        if (Test-Path $f) { "一時ファイルを消せなかった: $f （7-3で手で消す）" }
+                    }
                 }
             }
         } `
@@ -978,6 +990,10 @@ function Set-StepList {
         -Cmd { Invoke-InSrc { & (Get-VenvPython) -m pytest 2>&1 } } `
         -Hint {
             param($text)
+            if ($text -match '仮想環境が無い') {
+                Write-Host '  → 仮想環境が無いため実行していない。4-3-06 を先に通す' -ForegroundColor Red
+                return 'NG'
+            }
             if ($text -match '(\d+)\s+passed') {
                 $n = [int]$Matches[1]
                 if ($n -eq 54) { Write-Host "  → 54件PASS。基準どおり" -ForegroundColor Magenta }
@@ -1076,6 +1092,10 @@ function Set-StepList {
         } `
         -Hint {
             param($text)
+            if ($text -match '仮想環境が無い') {
+                Write-Host '  → 仮想環境が無いため実行していない。4-3-06 を先に通す' -ForegroundColor Red
+                return 'NG'
+            }
             if ($text -notmatch 'クーポン') {
                 Write-Host '  → クーポン件数が出ていない。No3ブランチに切り替わっているか確認する' -ForegroundColor Red
                 return 'NG'
@@ -1091,6 +1111,10 @@ function Set-StepList {
         -Cmd { Invoke-InSrc { & (Get-VenvPython) -m pytest 2>&1 } } `
         -Hint {
             param($text)
+            if ($text -match '仮想環境が無い') {
+                Write-Host '  → 仮想環境が無いため実行していない。4-3-06 を先に通す' -ForegroundColor Red
+                return 'NG'
+            }
             if ($text -match '(\d+)\s+passed') {
                 $n = [int]$Matches[1]
                 if ($n -eq 55) { Write-Host '  → 55件PASS。基準どおり' -ForegroundColor Magenta }
@@ -1704,18 +1728,6 @@ $index = 0
 foreach ($step in $steps) {
     $index++
     if ($script:Aborted) { break }
-
-    if ($step.When) {
-        $ok = $false
-        try { $ok = [bool](& $step.When) } catch { $ok = $false }
-        if (-not $ok) {
-            Show-Step $step $index $total
-            Write-Host ''
-            Write-Host '  条件に当たらないため自動スキップした' -ForegroundColor DarkGray
-            Add-Result $step '該当なし' '' '条件に当たらないため自動スキップ'
-            continue
-        }
-    }
 
     Show-Step $step $index $total
 

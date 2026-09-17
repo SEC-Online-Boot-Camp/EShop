@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = 'f9844ee1（2026-09-18 配備）'
+$script:ScriptVersion = '10923d04（2026-09-18 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -552,7 +552,7 @@ function Set-StepList {
             param($text)
             foreach ($line in ($text -split "`n")) {
                 if ($line -match '127\.0\.0\.1' -and $line -match 'プロキシ経由') {
-                    Write-Mark 'NG' '127.0.0.1がプロキシに投げられる。Swagger UIの確認で詰まる（3-5-b参照）'
+                    Write-Mark 'NG' '127.0.0.1がプロキシに投げられる。Swagger UIの確認で詰まる（3-5-b 参照）'
                     return 'NG'
                 }
             }
@@ -1176,7 +1176,7 @@ function Set-StepList {
 
     # ====================== 5章 Claude Codeの動作確認 ======================
 
-    New-Step -Id '5-2' -Ch '5' -Title 'CLAUDE.mdの認識（手動）' -Kind manual -Site materials `
+    New-Step -Id '5-2' -Ch '5' -Title 'CLAUDE.md の認識（手動）' -Kind manual -Site materials `
         -Show "  claudeの対話中に /clear のあと /context" `
         -Expect 'Memory filesに EShop\CLAUDE.md が出る'
 
@@ -1394,7 +1394,7 @@ function Invoke-Step($Step) {
     $sw.Stop()
     Write-Rule
     $sec = [math]::Round($sw.Elapsed.TotalSeconds, 1)
-    Write-Host ("  所要 {0} 秒" -f $sec) -ForegroundColor DarkGray
+    Write-Host ("  所要 {0}秒" -f $sec) -ForegroundColor DarkGray
     if ($Step.TimeKey) { $script:Timings[$Step.TimeKey] = $sec }
     # 記録に残すのは伏せ字を当てたもの、判定は当てる前のもので行う。
     # 伏せ字の対象と形が重なる値（4つドット区切りの版番号など）が潰れて、判定が

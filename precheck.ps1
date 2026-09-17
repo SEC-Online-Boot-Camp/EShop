@@ -77,7 +77,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '3f2c1451（2026-09-17 配備）'
+$script:ScriptVersion = 'd4a15c4f（2026-09-17 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -1565,11 +1565,38 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
     return
 }
 
-$desktop = [Environment]::GetFolderPath('Desktop')
-$script:WorkRoot = if ($WorkDir) { $WorkDir } else { Join-Path $desktop 'rehearsal' }
+# 既定の置き場を決める。デスクトップは Known Folder Move で OneDrive 配下へ
+# 付け替えられていることがあり、そこへ clone すると .venv と .git がまるごと
+# クラウドへ同期される。6章の所要時間の実測が当てにならなくなり、同期中の
+# ロックで pip install や git switch が落ちることもある。
+# 作業フォルダと記録を同じ1フォルダにまとめ、7-3でフォルダごと片付くようにする。
+function Test-CanCreateDir([string]$Parent) {
+    if (-not $Parent -or -not (Test-Path $Parent -PathType Container)) { return $false }
+    $probe = Join-Path $Parent ".precheck-probe-$PID"
+    try {
+        New-Item -ItemType Directory -Force -Path $probe -ErrorAction Stop | Out-Null
+        Remove-Item $probe -Recurse -Force -ErrorAction SilentlyContinue
+        return $true
+    } catch { return $false }
+}
+
+function Get-DefaultBase {
+    $name = "rehearsal-$(Get-Date -Format 'yyyyMMdd')"
+    # C:\ 直下は標準ユーザーでもフォルダを作れる。エクスプローラーで見えるので
+    # 消し忘れにくく、日付が入るので前回の残りとも区別できる。
+    # GPOで絞られている機材のために、利用者フォルダ直下へ退避する。AppData配下は
+    # 同期こそされないが見えない場所なので、消し忘れる方が怖い。
+    foreach ($parent in 'C:\', $env:USERPROFILE) {
+        if (Test-CanCreateDir $parent) { return (Join-Path $parent $name) }
+    }
+    return (Join-Path ([Environment]::GetFolderPath('Desktop')) $name)
+}
+
+$script:DefaultBase = Get-DefaultBase
+$script:WorkRoot = if ($WorkDir) { $WorkDir } else { $script:DefaultBase }
 $script:RepoDir = Join-Path $script:WorkRoot 'EShop'
 $script:SrcDir = Join-Path $script:RepoDir 'src'
-$script:OutRoot = if ($OutDir) { $OutDir } else { $desktop }
+$script:OutRoot = if ($OutDir) { $OutDir } else { $script:DefaultBase }
 $script:MaterialRoot = if ($MaterialDir) { $MaterialDir } elseif ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 # 7-2-b で「開始時点に戻す」ために、いまのUser環境変数を控える。
 # 元から設定されている値を消してしまわないようにするため。実行する機材に
@@ -1639,6 +1666,12 @@ Write-Host @"
   記録の出力先 : $script:OutRoot
 "@ -ForegroundColor Gray
 
+if ($script:WorkRoot -eq $script:OutRoot) {
+    Write-Host '  作業物と記録を同じフォルダにまとめてある。7-3ではこのフォルダごと消せばよい' -ForegroundColor DarkGray
+} else {
+    Write-Host '  作業物と記録が別のフォルダにある。7-3で両方を消すこと' -ForegroundColor Yellow
+}
+
 Write-Host ''
 if ($OnSite -and -not $Auto) {
     $stop = @($steps | Where-Object { $_.Kind -ne 'auto' }).Count
@@ -1665,13 +1698,19 @@ if ($DryRun) {
     Write-Host '  （1ステップごとに書き足すので、途中で中断しても残る）' -ForegroundColor DarkGray
 }
 
-if ($script:OutRoot -match '(?i)OneDrive') {
-    # 貸与機のデスクトップが客先テナントのOneDrive配下に付け替えられていることがある。
-    # そのまま書くと、7-3で機材から消してもクラウド側とごみ箱に残る。
+# 貸与機のデスクトップが客先テナントのOneDrive配下へ付け替えられていることがある。
+# 既定の置き場では避けているが、-WorkDir / -OutDir で指定された場合に備えて両方を見る。
+$onDrive = @()
+if ($script:WorkRoot -match '(?i)OneDrive') { $onDrive += "作業フォルダ : $script:WorkRoot" }
+if ($script:OutRoot -match '(?i)OneDrive') { $onDrive += "記録の出力先 : $script:OutRoot" }
+if ($onDrive.Count -gt 0) {
     Write-Host ''
-    Write-Host '  出力先がOneDrive配下にある。記録がクラウドへ同期される' -ForegroundColor Red
-    Write-Host '  7-3で機材から消してもクラウド側に残るため、同期されない場所を指定し直すこと' -ForegroundColor Red
-    Write-Host '    例: -OutDir C:\rehearsal-out' -ForegroundColor DarkGray
+    Write-Host '  OneDrive配下を指している。クラウドへ同期される' -ForegroundColor Red
+    $onDrive | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+    Write-Host '  作業フォルダが同期されると .venv と .git が同期の対象になり、6章の所要時間の' -ForegroundColor Red
+    Write-Host '  実測が当てにならなくなる。同期中のロックで pip install が落ちることもある' -ForegroundColor Red
+    Write-Host '  記録は7-3で機材から消してもクラウド側に残る' -ForegroundColor Red
+    Write-Host ("    例: -WorkDir {0} -OutDir {0}" -f $script:DefaultBase) -ForegroundColor DarkGray
 }
 
 try {
@@ -1738,7 +1777,9 @@ foreach ($step in $steps) {
                 Write-Host ''
                 Write-Label '作業' $script:WorkRoot 'White'
                 Write-Label 'テンプレ' (Join-Path $script:MaterialRoot 'docs-template') 'White'
-                Write-Host '  ここから先はファイルを作る。場所を変える場合は中断して -WorkDir で指定し直す' -ForegroundColor DarkGray
+                Write-Label '記録' $script:OutRoot 'White'
+                Write-Host '  ここから先はファイルを作る。場所を変えるなら中断して -WorkDir から指定し直す' -ForegroundColor DarkGray
+                Write-Host '  （2章の時点で記録の書き出しは始まっているので、-OutDir はここでは変えられない）' -ForegroundColor DarkGray
                 Write-Host ''
                 Write-Host '  4章の前提' -ForegroundColor Cyan
                 foreach ($c in 'git', 'python') {
@@ -1757,9 +1798,13 @@ foreach ($step in $steps) {
                 Write-Host "  Start-Transcript の記録: $(Join-Path $script:OutRoot 'rehearsal-check.txt')" -ForegroundColor White
                 Write-Host '  この記録と、最後に出力される precheck-result-*.md を講師の環境へ持ち帰る' -ForegroundColor White
                 Write-Host ''
-                Write-Host '  持ち帰ったあとに、機材に残した次のファイルを消す（講師専用資料を残さない）' -ForegroundColor Cyan
-                Write-Host ("    {0}" -f (Join-Path $script:OutRoot 'rehearsal-check.txt')) -ForegroundColor White
-                Write-Host ("    {0}" -f (Join-Path $script:OutRoot 'precheck-result-*.md')) -ForegroundColor White
+                Write-Host '  持ち帰ったあとに、機材に残した次のものを消す（講師専用資料を残さない）' -ForegroundColor Cyan
+                if ($script:WorkRoot -eq $script:OutRoot) {
+                    Write-Host ("    {0}  （作業物と記録。フォルダごと）" -f $script:OutRoot) -ForegroundColor White
+                } else {
+                    Write-Host ("    {0}  （作業物。フォルダごと）" -f $script:WorkRoot) -ForegroundColor White
+                    Write-Host ("    {0}  （記録。rehearsal-check.txt と precheck-*.md）" -f $script:OutRoot) -ForegroundColor White
+                }
                 Write-Host ("    {0}  （rehearsalブランチのクローンごと）" -f $script:MaterialRoot) -ForegroundColor White
                 Write-Host '  この削除は自動では行わない（講師自身のPCで実行した場合に本体を消してしまうため）' -ForegroundColor DarkGray
                 Write-Host ''

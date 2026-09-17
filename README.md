@@ -21,8 +21,11 @@ AI活用入門講座 SW編の**事前リハーサル**で使うものを置い�
 リハーサル機で次を実行する。受講者が使う`main`・`No3`は取得されない。
 
 ```powershell
+$base = "C:\rehearsal-$(Get-Date -Format 'yyyyMMdd')"
+New-Item -ItemType Directory -Force $base | Out-Null
+Set-Location $base
 git clone -b rehearsal --single-branch https://github.com/SEC-Online-Boot-Camp/EShop.git EShop-rehearsal
-cd EShop-rehearsal
+Set-Location EShop-rehearsal
 .\precheck.ps1 -DryRun            # 下見
 .\precheck.ps1 -OnSite            # 実環境リハーサル（止まる箇所を絞る）
 .\precheck.ps1                    # 全項目を1つずつ確認する
@@ -30,11 +33,22 @@ cd EShop-rehearsal
 
 `.ps1`の実行が実行ポリシーで禁止されている場合の起動方法は`precheck.ps1`の冒頭に書いてある。
 
-記録は既定でデスクトップに出る。**貸与機のデスクトップがOneDrive配下に付け替えられている場合は、同期されない場所を指定する。** そのままだと記録が客先のテナントへ同期され、機材から消してもクラウド側に残る（起動時に警告が出る）。
+## 置き場所
 
-```powershell
-.\precheck.ps1 -OnSite -OutDir C:\rehearsal-out
+**作業フォルダ（EShopのclone先）と記録の出力先は、既定で`C:\rehearsal-<日付>`になる。** 上のとおりこのスクリプトも同じフォルダに置けば、**リハーサルが終わったらフォルダごと1回で片付く**。
+
+```text
+C:\rehearsal-<日付>\
+├── EShop-rehearsal\      ← このリポジトリのクローン
+├── EShop\                ← 4-3-05 でcloneする作業ツリー
+├── precheck-result-<日時>.md
+├── precheck-steps-<日時>.md
+└── rehearsal-check.txt
 ```
+
+- **`EShop`の中には置かない。** 入れ子のリポジトリになり、7-1の`git status`の判定がぶれる
+- **デスクトップに置かない。** 貸与機ではKnown Folder Moveでデスクトップが客先テナントのOneDrive配下になっていることがある。`.venv`と`.git`が同期対象になると**6章の所要時間の実測が当てにならなくなり**、記録の方も機材から消してクラウド側に残る
+- `C:\`直下に作れない機材では`%USERPROFILE%\rehearsal-<日付>`へ自動で退避する。`-WorkDir`・`-OutDir`で明示することもできる（OneDrive配下を指した場合は起動時に警告が出る）
 
 ## 保守
 

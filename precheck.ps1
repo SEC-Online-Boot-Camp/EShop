@@ -1,8 +1,11 @@
 ﻿<#
     事前確認書 第I部（実機確認）の対話型ランナー
 
-    1ステップずつ「これから実行するコマンド」を表示し、Enterで実行して結果を表示する。
-    判定（OK / NG / 保留）とメモをその場で入力すると、そのつど記録ファイルへ書き足される。
+    1ステップずつ「これから実行するコマンド」と結果を表示する。止まるのは人が操作・
+    判断するところだけで、機械が判定できるステップは確認を求めずに流す。判定（OK / NG /
+    保留）とメモをその場で入力すると、そのつど記録ファイルへ書き足される。
+
+    自動で流したステップの判定がNGになったときは、その場で止まる。
 
     管理者権限は不要。機材の状態を変えるステップは <設定変更> と表示され、
     既定はスキップで、明示的に y を押したときだけ実行する。
@@ -49,16 +52,14 @@
     引数
 
         -DryRun          何も実行せず、全ステップの内容だけを順に表示する（下見用）
-        -OnSite          実環境リハーサル用。貸与機でしか測れない項目に絞り、機械が判定
-                         できるステップは確認を求めずに流す。止まるのは人が操作・判断
-                         するところだけ。社内で確定させる5章の挙動確認（5-2〜5-9）は
-                         対象から外れる
-        -Auto            確認を求めずに実行する。判定の根拠があるステップは自動で判定し、
+        -Auto            止まらずに最後まで走らせる。判定の根拠があるステップは自動で判定し、
                          無いものは「自動」として記録する。人が操作するステップ
                          （手動操作・聞き取り）は「未実施」として記録し、飛ばす
         -AllowChanges    -Auto のときに、機材の状態を変えるステップも実行する
                          （既定では実行しない）
-        -Chapter 2,3     指定した章だけを実施する（既定は2〜7章すべて）
+        -Chapter 2,3     指定した章だけを実施する。章を指定しないときは、社内で確定させる
+                         5章の挙動確認（5-2〜5-9）を除いた2〜7章を実施する。5章は
+                         -Chapter 5 で明示したときだけ対象になる
         -WorkDir <path>  EShopをcloneする作業フォルダ（既定 C:\rehearsal-<日付>）
         -MaterialDir <p> docs-template があるフォルダ（4-4-01で使う。既定はこのスクリプトの場所）
         -OutDir <path>   記録の出力先（既定は作業フォルダと同じ）
@@ -68,7 +69,6 @@
 [CmdletBinding()]
 param(
     [switch]$DryRun,
-    [switch]$OnSite,
     [switch]$Auto,
     [switch]$AllowChanges,
     [string[]]$Chapter,
@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '87d77b63（2026-09-17 配備）'
+$script:ScriptVersion = '6045eea7（2026-09-17 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -1658,9 +1658,11 @@ Set-StepList
 $targetChapters = if ($Chapter) { $Chapter | ForEach-Object { "$_" } } else { @('2', '3', '4', '5', '6', '7') }
 $script:TargetChapters = $targetChapters
 $steps = $script:Steps | Where-Object { $targetChapters -contains $_.Ch }
-if ($OnSite) { $steps = $steps | Where-Object { $_.Site -ne 'materials' } }
+# 5章の挙動確認は社内で確定させるもので、貸与機では測れない。章を指定していないときは
+# 対象から外し、-Chapter 5 と明示したときだけ実施する。
+if (-not $Chapter) { $steps = $steps | Where-Object { $_.Site -ne 'materials' } }
 $total = @($steps).Count
-# -OnSite では5章が丸ごと外れる。指定した章ではなく、実際に走る章を記録に書く
+# 5章が丸ごと外れることがある。指定した章ではなく、実際に走る章を記録に書く
 $script:TargetChapters = @($steps | ForEach-Object { $_.Ch } | Select-Object -Unique | Sort-Object)
 if ($script:TargetChapters.Count -eq 0) { $script:TargetChapters = @('(該当なし)') }
 
@@ -1671,8 +1673,8 @@ if (-not (Test-Path $script:OutRoot)) { New-Item -ItemType Directory -Force -Pat
 
 Write-Head ' 事前確認書 第I部（実機確認）'
 Write-Host @"
-  1ステップずつコマンドを表示し、Enterで実行して結果を表示する。
-  判定とメモをその場で入力すると、そのつど記録ファイルへ書き足される。
+  1ステップずつコマンドと結果を表示する。判定とメモをその場で入力すると、
+  そのつど記録ファイルへ書き足される。
 
   管理者権限は不要。<設定変更> と表示されるステップだけが機材の状態を変え、
   既定はスキップ、y を押したときだけ実行する（すべて7章で元へ戻す）。
@@ -1691,15 +1693,16 @@ if ($script:WorkRoot -eq $script:OutRoot) {
 }
 
 Write-Host ''
-if ($OnSite -and -not $Auto) {
+if (-not $Auto -and -not $DryRun) {
     $stop = @($steps | Where-Object { $_.Kind -ne 'auto' }).Count
-    Write-Host '  -OnSite: 実環境リハーサル用' -ForegroundColor Yellow
-    Write-Host ("    ・貸与機でしか測れない{0}項目に絞った（社内で確定させる5-2〜5-9は対象外）" -f $total) -ForegroundColor DarkGray
-    Write-Host ("    ・止まるのは人が操作・判断する{0}箇所だけ。残りは確認を求めずに流す" -f $stop) -ForegroundColor DarkGray
-    Write-Host '    ・自動で流したステップの判定がNGになったときは、その場で止まる' -ForegroundColor DarkGray
+    Write-Host ("  ・止まるのは人が操作・判断する{0}箇所だけ。残りは確認を求めずに流す" -f $stop) -ForegroundColor DarkGray
+    Write-Host '  ・自動で流したステップの判定がNGになったときは、その場で止まる' -ForegroundColor DarkGray
+    if (-not $Chapter) {
+        Write-Host '  ・社内で確定させる5章の挙動確認（5-2〜5-9）は対象外。実施するときは -Chapter 5' -ForegroundColor DarkGray
+    }
 }
 if ($Auto) {
-    Write-Host '  -Auto: 確認を求めずに実行する' -ForegroundColor Yellow
+    Write-Host '  -Auto: 止まらずに最後まで走らせる' -ForegroundColor Yellow
     Write-Host '    ・判定の根拠があるステップは自動で判定し、無いものは「自動」として記録する' -ForegroundColor DarkGray
     if ($AllowChanges) {
         Write-Host '    ・-AllowChanges により、機材の状態を変えるステップも実行する' -ForegroundColor Red
@@ -1933,34 +1936,22 @@ foreach ($step in $steps) {
         continue
     }
 
-    # ---- auto ステップ
-    if ($Auto -or $OnSite) {
-        $r = Invoke-Step $step
-        Set-AutoVerdict $step $r
-        if ($OnSite -and -not $Auto -and $r.Suggest -eq 'NG') {
-            Write-Host ''
-            Write-Host '  判定がNGのため、ここで止まる' -ForegroundColor Red
-            $ans = Read-Key '[Enter]=続ける   [m]=メモを追記   [q]=中断'
-            if ($ans.ToLower() -eq 'q') { $script:Aborted = $true; break }
-            if ($ans.ToLower() -eq 'm') {
-                $memo = Read-Host '  メモ'
-                if ($memo) {
-                    $script:Results[-1].Memo = $memo
-                    try { Save-Record | Out-Null } catch { }
-                }
+    # ---- auto ステップ。確認を求めずに流し、NGのときだけ止まる
+    $r = Invoke-Step $step
+    Set-AutoVerdict $step $r
+    if (-not $Auto -and $r.Suggest -eq 'NG') {
+        Write-Host ''
+        Write-Host '  判定がNGのため、ここで止まる' -ForegroundColor Red
+        $ans = Read-Key '[Enter]=続ける   [m]=メモを追記   [q]=中断'
+        if ($ans.ToLower() -eq 'q') { $script:Aborted = $true; break }
+        if ($ans.ToLower() -eq 'm') {
+            $memo = Read-Host '  メモ'
+            if ($memo) {
+                $script:Results[-1].Memo = $memo
+                try { Save-Record | Out-Null } catch { }
             }
         }
-        continue
     }
-    $ans = Read-Key '[Enter]=実行   [s]=スキップ   [q]=中断'
-    if ($ans.ToLower() -eq 'q') { $script:Aborted = $true; break }
-    if ($ans.ToLower() -eq 's') {
-        Add-Result $step 'スキップ' '' ''
-        Write-Host '  スキップとして記録' -ForegroundColor DarkGray
-        continue
-    }
-    $r = Invoke-Step $step
-    Read-Verdict $step $r.Text $r.Seconds $r.Suggest
 }
 
 # ---------------------------------------------------------------- まとめ

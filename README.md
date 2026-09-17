@@ -26,10 +26,19 @@ New-Item -ItemType Directory -Force $base | Out-Null
 Set-Location $base
 git clone -b rehearsal --single-branch https://github.com/SEC-Online-Boot-Camp/EShop.git EShop-rehearsal
 Set-Location EShop-rehearsal
-.\precheck.ps1 -DryRun            # 下見
-.\precheck.ps1 -OnSite            # 実環境リハーサル（止まる箇所を絞る）
-.\precheck.ps1                    # 全項目を1つずつ確認する
+.\precheck.ps1 -DryRun            # 下見（何も実行しない）
+.\precheck.ps1                    # 実環境リハーサル
 ```
+
+止まるのは人が操作・判断するところだけで、機械が判定できるステップは確認を求めずに流す。**自動で流したステップの判定がNGになったときは、その場で止まる。**
+
+| 呼び方 | 用途 | 項目数 | 止まる箇所 |
+| :-- | :-- | --: | --: |
+| `.\precheck.ps1` | 実環境リハーサル（貸与機） | 45 | 17 |
+| `.\precheck.ps1 -Chapter 5` | 社内で確定させる5章の挙動確認 | 8 | 8 |
+| `.\precheck.ps1 -Auto` | 講師の下ごしらえ・再実行 | 45 | 0 |
+
+**5章（5-2〜5-9）は`-Chapter 5`と書いたときだけ対象になる。** 社内で先に潰しておく前提で、貸与機では測れないため既定から外してある。
 
 `.ps1`の実行が実行ポリシーで禁止されている場合の起動方法は`precheck.ps1`の冒頭に書いてある。
 

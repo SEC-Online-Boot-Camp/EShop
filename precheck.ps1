@@ -8,15 +8,15 @@
     自動で流したステップの判定がNGになったときは、その場で止まる。
 
     管理者権限は不要。機材の状態を変えるステップは <設定変更> と表示され、
-    既定はスキップで、明示的に y を押したときだけ実行する。
+    既定はスキップで、明示的にyを押したときだけ実行する。
 
     このファイルの正本は教材リポジトリ側にあり、ここへは配備されたものが置かれる。
     直すときは正本を直し、deploy-rehearsal.py で配備する。
 
-    配備先は公開リポジトリで、受講者からも参照できる（普通の git clone でも
+    配備先は公開リポジトリで、受講者からも参照できる（普通のgit cloneでも
     リモート追跡ブランチとして付いてくる）。受講者に伏せる情報はここに書かない。
 
-    リハーサル機での取得（作業ツリーに main / No3 は展開されない）
+    リハーサル機での取得（作業ツリーにmain / No3は展開されない）
 
         git clone -b rehearsal --single-branch https://github.com/SEC-Online-Boot-Camp/EShop.git EShop-rehearsal
         cd EShop-rehearsal
@@ -59,7 +59,7 @@
                          （既定では実行しない）
         -Chapter 2,3     指定した章だけを実施する。章を指定しないときは、社内で確定させる
                          5章の挙動確認（5-2〜5-9）を除いた2〜7章を実施する。5章は
-                         -Chapter 5 で明示したときだけ対象になる
+                         -Chapter 5で明示したときだけ対象になる
         -WorkDir <path>  EShopをcloneする作業フォルダ（既定 C:\rehearsal-<日付>）
         -MaterialDir <p> docs-template があるフォルダ（4-4-01で使う。既定はこのスクリプトの場所）
         -OutDir <path>   記録の出力先（既定は作業フォルダと同じ）
@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '2a1aa246（2026-09-17 配備）'
+$script:ScriptVersion = '4e5e819d（2026-09-18 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -299,7 +299,7 @@ function Get-VenvPython {
     if (Test-Path $p) { return $p }
     # ここで 'python' に落とすと、貸与機のグローバルなPythonに pip install が走る。
     # 7章の原状復帰はcloneしたフォルダと環境変数しか戻さないので、それは回収できない。
-    throw "仮想環境が無い: $p （4-3-06 のvenv作成が失敗している。ここから先は実行しない）"
+    throw "仮想環境が無い: $p（4-3-06 のvenv作成が失敗している。ここから先は実行しない）"
 }
 
 function Invoke-InSrc([scriptblock]$Block) {
@@ -336,7 +336,7 @@ function Set-StepList {
 
     New-Step -Id '2-1-c' -Ch '2' -Title 'PowerShellの実行ポリシー' -Kind auto `
         -Purpose '.venv\Scripts\activate が通るかを左右する' `
-        -Expect 'MachinePolicy / UserPolicy が Undefined 以外なら、グループポリシーで縛られている' `
+        -Expect 'MachinePolicy / UserPolicyがUndefined以外なら、グループポリシーで縛られている' `
         -Show 'Get-ExecutionPolicy -List
 （このコマンド自体が制限で動かない環境では、同じ値をレジストリから読む）' `
         -Cmd {
@@ -364,10 +364,10 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match '(?m)^\s*(MachinePolicy|UserPolicy)\s+(?!Undefined)\S+') {
-                Write-Mark '参考' 'グループポリシーで縛られている。Set-ExecutionPolicy -Scope CurrentUser は効かないため、'
+                Write-Mark '参考' 'グループポリシーで縛られている。Set-ExecutionPolicy -Scope CurrentUserは効かないため、'
                 Write-Host '        01-01手順書は代替1行だけに絞る（11章へ記録）' -ForegroundColor DarkGray
             } else {
-                Write-Mark '参考' 'ポリシーによる縛りは無い。activate の可否は 4-3 の手順8で確定する'
+                Write-Mark '参考' 'ポリシーによる縛りは無い。activateの可否は 4-3 の手順8で確定する'
             }
         }
 
@@ -390,12 +390,12 @@ function Set-StepList {
         }
 
     New-Step -Id '2-2-a' -Ch '2' -Title 'VS Codeの版' -Kind auto `
-        -Purpose '「PATHに追加」を選ばずに入れてあると code が解決できない。導入の有無と区別する' `
+        -Purpose '「PATHに追加」を選ばずに入れてあるとcodeが解決できない。導入の有無と区別する' `
         -Expect '導入済みであること' `
         -Show 'code --version（解決できない場合は実体の有無も見る）' `
         -Cmd {
             $v = try { code --version 2>&1 } catch { $null }
-            if ($v) { $v } else { 'code コマンドを解決できない' }
+            if ($v) { $v } else { 'codeコマンドを解決できない' }
             foreach ($p in (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\Code.exe'),
                 'C:\Program Files\Microsoft VS Code\Code.exe') {
                 if (Test-Path $p) { "実体あり: $p"; break }
@@ -405,8 +405,8 @@ function Set-StepList {
             param($text)
             if ($text -match '(?m)^\s*\d+\.\d+') { Write-Mark 'OK' '版を取得できた'; return 'OK' }
             if ($text -match '実体あり:') {
-                Write-Mark '保留' '導入されているが code がPATHに無い。受講者にも同じ現象が出る'
-                Write-Host '        講座では code コマンドを使わないため実害は無いが、手順書の補足に載せる' -ForegroundColor Yellow
+                Write-Mark '保留' '導入されているがcodeがPATHに無い。受講者にも同じ現象が出る'
+                Write-Host '        講座ではcodeコマンドを使わないため実害は無いが、手順書の補足に載せる' -ForegroundColor Yellow
                 return '保留'
             }
             Write-Mark 'NG' 'VS Codeが見つからない'
@@ -426,7 +426,7 @@ function Set-StepList {
             if ($text -match 'Python\s+3\.(\d+)') {
                 $minor = [int]$Matches[1]
                 if ($minor -lt 11) { Write-Mark 'NG' "3.11未満（3.$minor）。要件を満たさない"; $ng = $true }
-                else { Write-Mark 'OK' "3.$minor で要件を満たす" }
+                else { Write-Mark 'OK' "3.$minorで要件を満たす" }
             } else { $ng = $true }
             if ($text -match 'WindowsApps') {
                 Write-Mark 'NG' 'Microsoft Storeのエイリアスを指している。実体のPythonが入っていない'
@@ -436,13 +436,13 @@ function Set-StepList {
         }
 
     New-Step -Id '2-2-c' -Ch '2' -Title 'Gitの版' -Kind auto `
-        -Purpose '4-3-05 の clone に必要。無ければ受講者にも手動導入が要る' `
+        -Purpose '4-3-05 のcloneに必要。無ければ受講者にも手動導入が要る' `
         -Expect '導入済みであること' `
         -Cmd { git --version } `
         -Hint {
             param($text)
             if ($text -match 'git version') { Write-Mark 'OK' '導入されている'; return 'OK' }
-            Write-Mark 'NG' 'git が見つからない。4章は実施できない'
+            Write-Mark 'NG' 'gitが見つからない。4章は実施できない'
             return 'NG'
         }
 
@@ -474,7 +474,7 @@ function Set-StepList {
         -Purpose 'curl・pip・Claude Codeは環境変数だけを見る。設定されているかをまず見る' `
         -Expect '有無が3スコープで記録される' `
         -Show @"
-  HTTP_PROXY / HTTPS_PROXY / NO_PROXY が設定されているかを、
+  HTTP_PROXY / HTTPS_PROXY / NO_PROXYが設定されているかを、
   User・Machine・いま動いているプロセスの3スコープで確認する。
 
   **値は表示しない**（有無だけを見る）。アドレスが必要な場合は3-2-4を参照。
@@ -491,7 +491,7 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match 'プロセス=設定あり') {
-                Write-Mark '参考' '設定されている。curl・pip・git はプロキシを使う状態'
+                Write-Mark '参考' '設定されている。curl・pip・gitはプロキシを使う状態'
             } else {
                 Write-Mark '参考' '設定されていない。3-4-1が通らなければ、手順書に設定を載せる（11章）'
             }
@@ -499,9 +499,9 @@ function Set-StepList {
 
     New-Step -Id '3-2-2' -Ch '3' -Title 'プロキシ設定の方式' -Kind auto `
         -Purpose 'ブラウザとVS Codeが見る設定。方式によって受講者への案内が変わる' `
-        -Expect '固定アドレス指定 / PAC / WPAD自動検出 / なし のいずれかが判る' `
+        -Expect '固定アドレス指定 / PAC / WPAD自動検出 / なし のいずれかを判別できる' `
         -Show @"
-  レジストリ（WinINET）と netsh winhttp から、**方式だけ**を読む。
+  レジストリ（WinINET）とnetsh winhttpから、**方式だけ**を読む。
   アドレス・PACのURL・除外リストは表示しない（3-2-4を参照）。
 "@ `
         -Cmd {
@@ -531,7 +531,7 @@ function Set-StepList {
         }
 
     New-Step -Id '3-2-3' -Ch '3' -Title '宛先ごとの経路（プロキシ経由か直結か）' -Kind auto `
-        -Purpose 'PAC方式でも宛先ごとの振り分けが判る。ローカルの迂回もここで見える' `
+        -Purpose 'PAC方式でも宛先ごとの振り分けを判別できる。ローカルの迂回もここで見える' `
         -Expect '講座で使うホストが「プロキシ経由」か「直結」か。127.0.0.1は直結であること' `
         -Show @"
   システムのプロキシ設定に、宛先ごとの経路を問い合わせる。
@@ -619,7 +619,7 @@ function Set-StepList {
 
     New-Step -Id '3-4-2' -Ch '3' -Title '到達性の確認（システム設定の経路 / ブラウザ・VS Code相当）' -Kind auto `
         -Purpose '3-4-1と食い違ったら、それが原因の切り分けになる' `
-        -Expect 'curlと同じ結果か。違う場合は下のヒントを読む' `
+        -Expect 'curlと同じ結果か。違う場合は下に出る判定と参考を読む' `
         -Cmd {
             foreach ($u in 'https://claude.ai', 'https://api.anthropic.com', 'https://github.com', 'https://pypi.org/simple/', 'https://marketplace.visualstudio.com') {
                 try { "{0,-45} {1}" -f $u, (Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 20).StatusCode }
@@ -646,25 +646,25 @@ function Set-StepList {
     New-Step -Id '3-5-a' -Ch '3' -Title 'claude.aiへのログイン（手動）' -Kind manual `
         -Purpose 'Claude Codeの認証はブラウザを経由するため、ブラウザ側が通る必要がある' `
         -Show @"
-  1. Edge で https://claude.ai を開く
+  1. Edgeで https://claude.ai を開く
   2. ログインする（メール＋コード、またはSSO）
   3. チャットを1往復する
 "@ `
         -Expect 'ログインでき、応答が返ること'
 
     New-Step -Id '3-5-b' -Ch '3' -Title 'ローカル通信（127.0.0.1）の迂回' -Kind auto `
-        -Purpose 'ここがプロキシに投げられると Swagger UI の確認で詰まる' `
-        -Expect 'True であること' `
+        -Purpose 'ここがプロキシに投げられるとSwagger UIの確認で詰まる' `
+        -Expect 'Trueであること' `
         -Cmd {
             [System.Net.WebRequest]::GetSystemWebProxy().IsBypassed([Uri]'http://127.0.0.1:8000/')
         } `
         -Hint {
             param($text)
             if ($text -match 'False') {
-                Write-Mark 'NG' '迂回されない。環境変数を設定する場合は NO_PROXY に localhost,127.0.0.1,::1 を必ず入れる'
+                Write-Mark 'NG' '迂回されない。環境変数を設定する場合はNO_PROXYにlocalhost,127.0.0.1,::1 を必ず入れる'
                 return 'NG'
             } else {
-                Write-Mark 'OK' '迂回される。Swagger UI の表示は問題ない'
+                Write-Mark 'OK' '迂回される。Swagger UIの表示は問題ない'
                 return 'OK'
             }
         }
@@ -702,7 +702,7 @@ function Set-StepList {
                 '  → 遮断か未設定。落ちたホストを10章の申請に上げる'
             }
             ''
-            'ケースE（TLS傍受）は 4-3-08 の pip install の結果で判定する'
+            'ケースE（TLS傍受）は 4-3-08 のpip installの結果で判定する'
         } `
         -Hint {
             param($text)
@@ -735,7 +735,7 @@ function Set-StepList {
             # 丸ごと置き換えるとプロセス固有のPATH（有効化済みのvenv など）が落ちるため、後ろに足す。
             $add = @([Environment]::GetEnvironmentVariable('PATH', 'Machine'), [Environment]::GetEnvironmentVariable('PATH', 'User')) -ne $null
             $env:PATH = (@($env:PATH.TrimEnd(';')) + $add) -join ';'
-            'このプロセスのPATHに Machine と User の分を足した'
+            'このプロセスのPATHにMachineとUserの分を足した'
         } `
         -SkipImpact 'スキップすると 4-3-02〜4-3-04（版の記録・ログイン・VS Code拡張）が実施できない'
 
@@ -745,7 +745,7 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match '(?m)^\s*\d+\.\d+') { Write-Mark 'OK' '版を取得できた'; return 'OK' }
-            Write-Mark 'NG' 'claude を解決できない。導入に失敗したか、PATHが通っていない'
+            Write-Mark 'NG' 'claudeを解決できない。導入に失敗したか、PATHが通っていない'
             Write-Host '        4-3-01 をスキップしたならここもNGでよい。実行したなら新しいターミナルで試す' -ForegroundColor Red
             return 'NG'
         }
@@ -763,8 +763,8 @@ function Set-StepList {
 
     New-Step -Id '4-3-04' -Ch '4' -Title 'VS Code拡張の導入とサインイン（手動）' -Kind manual `
         -Show @"
-  1. VS Code の拡張ビューで「Claude Code for VS Code」を検索して導入する
-  2. Claude Code パネルの Sign in で認証する
+  1. VS Codeの拡張ビューで「Claude Code for VS Code」を検索して導入する
+  2. Claude CodeパネルのSign inで認証する
 "@ `
         -Expect 'インストール完了とサインインまで到達する（marketplaceとvsassetsの両方が必要）'
 
@@ -784,14 +784,14 @@ function Set-StepList {
             }
             Push-Location $script:WorkRoot
             try {
-                if (Test-Path $script:RepoDir) { "既に存在するため clone をスキップ: $($script:RepoDir)"; return }
+                if (Test-Path $script:RepoDir) { "既に存在するためcloneをスキップ: $($script:RepoDir)"; return }
                 git clone https://github.com/SEC-Online-Boot-Camp/EShop.git 2>&1
             } finally { Pop-Location }
         } `
         -Hint {
             param($text)
             if (Test-Path (Join-Path $script:RepoDir 'src')) {
-                Write-Mark 'OK' 'cloneできている（src が見える）'
+                Write-Mark 'OK' 'cloneできている（srcが見える）'
                 return 'OK'
             }
             Write-Mark 'NG' 'cloneできていない。github.com への到達を3-4で確認する'
@@ -806,14 +806,14 @@ function Set-StepList {
             param($text)
             $p = Join-Path $script:SrcDir '.venv\Scripts\python.exe'
             if (Test-Path $p) { Write-Mark 'OK' '.venv\Scripts\python.exe ができている'; return 'OK' }
-            Write-Mark 'NG' '.venv ができていない。ここで止める'
-            Write-Host '        このまま進むと貸与機のPythonに pip install してしまうため、4-3-08以降は実行しない' -ForegroundColor Red
+            Write-Mark 'NG' '仮想環境（.venv）ができていない。ここで止める'
+            Write-Host '        このまま進むと貸与機のPythonにpip installしてしまうため、4-3-08以降は実行しない' -ForegroundColor Red
             return 'NG'
         }
 
-    New-Step -Id '4-3-07' -Ch '4' -Title '仮想環境の有効化（activate の可否）' -Kind auto `
+    New-Step -Id '4-3-07' -Ch '4' -Title '仮想環境の有効化（activateの可否）' -Kind auto `
         -Purpose '実行ポリシーで .ps1 が禁止されていると失敗する。代替1行が効くかをここで確定する' `
-        -Expect '(.venv) 相当の状態になること。activate が失敗した場合は代替1行で通ること' `
+        -Expect '(.venv) 相当の状態になること。activateが失敗した場合は代替1行で通ること' `
         -Show @"
   .venv\Scripts\activate
   （失敗する場合の代替1行 = 01-01手順書に記載のもの）
@@ -857,7 +857,7 @@ function Set-StepList {
         -Show @"
   pip install -r requirements.txt
 
-  precheck では --retries 1 を足す。pipの既定は5回再試行するため、到達できない機材だと
+  precheckでは --retries 1を足す。pipの既定は5回再試行するため、到達できない機材だと
   十数分無反応になる。成功する機材では所要時間は変わらないので、6章の実測にも使える。
 "@ `
         -Cmd { Invoke-InSrc { & (Get-VenvPython) -m pip install --retries 1 -r requirements.txt 2>&1 } } `
@@ -894,7 +894,7 @@ function Set-StepList {
             if ($text -match 'ユーザー2件・商品5件') { Write-Mark 'OK' '期待どおりの件数'; return 'OK' }
             if ($text -match 'すでにデータが投入されています') {
                 Write-Mark '保留' 'DBが残っているため投入をスキップした。件数を確認できていない'
-                Write-Host '        やり直す場合は src の ecommerce.db を消してから再実行する' -ForegroundColor Yellow
+                Write-Host '        やり直す場合はsrcの ecommerce.db を消してから再実行する' -ForegroundColor Yellow
                 return '保留'
             }
             Write-Mark 'NG' '期待する件数（ユーザー2件・商品5件）が出ていない'
@@ -903,7 +903,7 @@ function Set-StepList {
 
     New-Step -Id '4-3-10' -Ch '4' -Title 'サーバー起動とSwagger UIの表示' -Kind auto `
         -Purpose 'アプリが起動して応答を返すことを確かめる。あわせてループバックの迂回も測る' `
-        -Expect 'http://127.0.0.1:8000/docs が 200 を返す' `
+        -Expect 'http://127.0.0.1:8000/docs が200を返す' `
         -Show @"
   uvicorn app.main:app --reload
   → ブラウザで http://127.0.0.1:8000/docs を開く
@@ -949,10 +949,10 @@ function Set-StepList {
                         # ここだけ --noproxy を外す。環境変数の経路でループバックが迂回されるかの実測。
                         $via = (curl.exe -s -o NUL -w "%{http_code}" --max-time 10 http://127.0.0.1:8000/docs 2>&1)
                         if ($via -eq '200') {
-                            "環境変数の経路でも 200。127.0.0.1 はプロキシに投げられていない"
+                            "環境変数の経路でも200。127.0.0.1 はプロキシに投げられていない"
                         } else {
                             "環境変数の経路では $via。127.0.0.1 がプロキシに投げられている可能性がある"
-                            "  → NO_PROXY にループバックを足す案内が要る（3-5-b と 3-6-a を見る）"
+                            "  → NO_PROXYにループバックを足す案内が要る（3-5-b と 3-6-a を見る）"
                         }
                         'ブラウザでも開いて画面を確認する（起動したままにしたい場合は手動で起動し直す）'
                     } else {
@@ -971,7 +971,7 @@ function Set-StepList {
                     if ($proc) { $proc.WaitForExit(3000) | Out-Null }
                     Remove-Item $log, $err -Force -ErrorAction SilentlyContinue
                     foreach ($f in $log, $err) {
-                        if (Test-Path $f) { "一時ファイルを消せなかった: $f （7-3で手で消す）" }
+                        if (Test-Path $f) { "一時ファイルを消せなかった: $f（7-3で手で消す）" }
                     }
                 }
             }
@@ -1012,7 +1012,7 @@ function Set-StepList {
             if ($text -match '(\d+)\s+passed') {
                 $n = [int]$Matches[1]
                 if ($n -eq 54) { Write-Mark 'OK' "54件PASS。基準どおり" }
-                else { Write-Mark 'NG' "$n 件PASS。基準の54件と違う" }
+                else { Write-Mark 'NG' "$n件PASS。基準の54件と違う" }
             }
             if ($text -match '(\d+)\s+failed') { Write-Mark 'NG' "失敗 $($Matches[1]) 件。mainでは全件PASSが期待値" }
             if ($text -match '(?m)(\d+)\s+passed' -and [int]$Matches[1] -eq 54 -and $text -notmatch '\d+\s+failed') { return 'OK' }
@@ -1034,17 +1034,17 @@ function Set-StepList {
             Invoke-InRepo {
                 $tpl = Join-Path $script:MaterialRoot 'docs-template'
                 $files = @(Get-ChildItem (Join-Path $tpl '*.md') -ErrorAction SilentlyContinue)
-                if ($files.Count -eq 0) { "docs-template が見つからない: $tpl （-MaterialDir で指定する）"; return }
+                if ($files.Count -eq 0) { "docs-template が見つからない: $tpl（-MaterialDir で指定する）"; return }
                 New-Item -ItemType Directory -Force docs | Out-Null
                 $files | ForEach-Object { Copy-Item $_.FullName (Join-Path 'docs' $_.Name) -Force }
                 Get-ChildItem docs | Select-Object Name, Length
             }
         } `
-        -SkipImpact 'スキップすると 4-4-03（成果物の確認）以降と 5章の#5 が実施できない'
+        -SkipImpact 'スキップすると 4-4-03（成果物の確認）以降と5章の#5が実施できない'
 
     New-Step -Id '4-4-02' -Ch '4' -Title 'No3ブランチの取得と切り替え' -Kind auto -TimeKey 'fetch' `
         -Purpose 'ここで再びネットワークを使う。No.1が通っても省略しない' `
-        -Expect 'git branch --show-current が No3' `
+        -Expect 'git branch --show-current がNo3' `
         -Show 'git fetch origin ; git switch No3 ; git branch --show-current' `
         -Cmd {
             Invoke-InRepo {
@@ -1064,7 +1064,7 @@ function Set-StepList {
         -Purpose '手順書（03-01の手順0）は2つを同じブロックに書いており、どちらかのcwdでは必ず失敗する' `
         -Expect '両方が見つかること。実行場所が別であることを確認する' `
         -Show @"
-  src で        : Get-ChildItem app\coupon.py
+  srcで        : Get-ChildItem app\coupon.py
   EShop直下で   : Get-ChildItem docs
 
   失敗しても機材の問題ではない。手順書側の不備として11章に記録する。
@@ -1088,10 +1088,10 @@ function Set-StepList {
             # 4-4-01 を実施していなければ docs は無いのが当然なので、NGではなく保留にする
             $placed = $script:Results | Where-Object { $_.Id -eq '4-4-01' -and $_.Verdict -eq 'OK' }
             if ($placed) {
-                Write-Mark 'NG' '4-4-01は実施済みなのに docs の成果物が無い。配置先を確認する'
+                Write-Mark 'NG' '4-4-01は実施済みなのにdocsの成果物が無い。配置先を確認する'
                 return 'NG'
             }
-            Write-Mark '保留' 'docs が無い。4-4-01（成果物の配置）を実施していないため判定できない'
+            Write-Mark '保留' 'docsが無い。4-4-01（成果物の配置）を実施していないため判定できない'
             Write-Host '        coupon.py は見つかっているので、切り替え自体は成功している' -ForegroundColor Yellow
             return '保留'
         }
@@ -1133,7 +1133,7 @@ function Set-StepList {
             if ($text -match '(\d+)\s+passed') {
                 $n = [int]$Matches[1]
                 if ($n -eq 55) { Write-Mark 'OK' '55件PASS。基準どおり' }
-                else { Write-Mark 'NG' "$n 件PASS。基準の55件と違う" }
+                else { Write-Mark 'NG' "$n件PASS。基準の55件と違う" }
             }
             if ($text -match '(?m)(\d+)\s+passed' -and [int]$Matches[1] -eq 55 -and $text -notmatch '\d+\s+failed') { return 'OK' }
             return 'NG'
@@ -1142,23 +1142,23 @@ function Set-StepList {
     # 4-5 を 4-4-05 と 4-4-06 の間に置いてあるのは実行順のため（No3のseedが済んでいないと
     # 注文が通らない）。記録の並びが 4-4-05 → 4-5 → 4-4-06 になるのは意図したもの。
     New-Step -Id '4-5' -Ch '4' -Title 'Swagger UIでの注文確定（手動）' -Kind manual `
-        -Purpose 'pytest は別DBを使うため、ecommerce.db の削除漏れはここでしか表面化しない' `
+        -Purpose 'pytestは別DBを使うため、ecommerce.db の削除漏れはここでしか表面化しない' `
         -Show @"
-  1. src で uvicorn app.main:app --reload を起動し、http://127.0.0.1:8000/docs を開く
-  2. POST /auth/login を実行し、access_token を控える
+  1. srcでuvicorn app.main:app --reload を起動し、http://127.0.0.1:8000/docs を開く
+  2. POST /auth/login を実行し、access_tokenを控える
      （ログイン情報は src/app/seed.py に定義されている。README.md には無い）
-  3. 画面右上の Authorize にトークンを貼る
+  3. 画面右上のAuthorizeにトークンを貼る
   4. POST /cart/items で商品を1件カートに追加する
   5. POST /orders を実行する
 
-  500 で table orders has no column named coupon_code が出たら、
-  4-4-04 のDB削除ができていない。DBを消して seed からやり直す。
+  500でtable orders has no column named coupon_codeが出たら、
+  4-4-04 のDB削除ができていない。DBを消してseedからやり直す。
 "@ `
-        -Expect 'POST /orders が 201 を返す'
+        -Expect 'POST /orders が201を返す'
 
     New-Step -Id '4-4-06' -Ch '4' -Title '生成したテストの実行（手動）' -Kind manual `
         -Show @"
-  03-02 の手順で AI に tests/test_coupon.py を生成させ、次を実行する:
+  03-02 の手順でAIに tests/test_coupon.py を生成させ、次を実行する:
     pytest tests/test_coupon.py -v --disable-warnings
 "@ `
         -Expect 'テストが実行できること（FAILEDは想定内）'
@@ -1169,7 +1169,7 @@ function Set-StepList {
     .venv\Scripts\pytest.exe --tb=no -q -rf --disable-warnings
 
   配布コードには意図的な欠陥が仕込まれている。失敗が出るのが正常。
-  最後に引数なしの pytest が全件PASSする状態まで到達できるかを見る。
+  最後に引数なしのpytestが全件PASSする状態まで到達できるかを見る。
   （件数は受講者に伏せるため、ここには書かない。事前確認書の4-4を見る）
 "@ `
         -Expect '意図的な欠陥に由来する失敗が出て、最後に全件PASSまで到達できる（件数は事前確認書の4-4）'
@@ -1177,8 +1177,8 @@ function Set-StepList {
     # ====================== 5章 Claude Codeの動作確認 ======================
 
     New-Step -Id '5-2' -Ch '5' -Title 'CLAUDE.mdの認識（手動）' -Kind manual -Site materials `
-        -Show "  claude の対話中に /clear のあと /context" `
-        -Expect 'Memory files に EShop\CLAUDE.md が出る'
+        -Show "  claudeの対話中に /clear のあと /context" `
+        -Expect 'Memory filesに EShop\CLAUDE.md が出る'
 
     New-Step -Id '5-3' -Ch '5' -Title 'ルール適用前に .env が出力されるか（手動）' -Kind manual -Site materials `
         -Purpose 'ここで値が表示されないと01-03の演習前半が成立しない。最重要の確認項目' `
@@ -1207,10 +1207,10 @@ function Set-StepList {
 
     New-Step -Id '5-9' -Ch '5' -Title '.envの抽象化後にアプリが動くか' -Kind manual -Site materials `
         -Show @"
-  01-04-機密情報の抽象化手順.md の手順3を実施したあと、src で pytest を実行する。
+  01-04-機密情報の抽象化手順.md の手順3を実施したあと、srcでpytestを実行する。
   （このスクリプトの 4-3-11 と同じコマンド）
 "@ `
-        -Expect '全件PASS。DATABASE_URL は置換しない'
+        -Expect '全件PASS。DATABASE_URLは置換しない'
 
     # ====================== 6章 所要時間 ======================
 
@@ -1266,7 +1266,7 @@ function Set-StepList {
             if ($text -match '結果: 追跡ファイルの変更なし・未pushなし') {
                 Write-Mark 'OK' '追跡ファイルの変更も未pushのコミットも無い'
                 if ($text -notmatch '未追跡ファイル[\s\S]*?（なし）') {
-                    Write-Host '        未追跡ファイル（docs・生成物など）はクローンごと削除して消す（7-3-a）' -ForegroundColor DarkGray
+                    Write-Host '        未追跡ファイル（docs・生成物など）はクローンごと消す（7-3-a）' -ForegroundColor DarkGray
                 }
                 return 'OK'
             }
@@ -1279,15 +1279,15 @@ function Set-StepList {
 
     New-Step -Id '7-2-a' -Ch '7' -Title '認証情報のログアウト（手動）' -Kind manual `
         -Show @"
-  1. claude の対話中に /logout
+  1. claudeの対話中に /logout
      設定ごと消す場合: Remove-Item -Recurse -Force "`$env:USERPROFILE\.claude"
-  2. VS Code の Claude Code パネルからサインアウト
+  2. VS CodeのClaude Codeパネルからサインアウト
   3. ブラウザで claude.ai からログアウト（必要ならプロファイルを削除）
 "@ `
         -Expect '3つすべてで講師のアカウント情報が残らないこと'
 
     New-Step -Id '7-2-b' -Ch '7' -Title '環境変数を開始時点に戻す' -Kind change `
-        -Purpose 'setx では消せない。このリハーサルで足した分だけを戻す。実行ポリシーの変化も確かめる' `
+        -Purpose 'setxでは消せない。このリハーサルで足した分だけを戻す。実行ポリシーの変化も確かめる' `
         -Expect '開始時点から変わった変数だけが元の値に戻り、元からあった値はそのまま残る' `
         -Show @"
   起動時のUser環境変数を控えてあるので、それと比べて変わっているものだけを
@@ -1304,26 +1304,26 @@ function Set-StepList {
                 $now = [Environment]::GetEnvironmentVariable($n, 'User')
                 $was = $script:EnvSnapshot[$n]
                 if ($now -eq $was) {
-                    if ($was) { "変更なし: $n （元から設定されていた。その値のまま残す）" }
-                    else { "変更なし: $n （起動時から未設定）" }
+                    if ($was) { "変更なし: $n（元から設定されていた。その値のまま残す）" }
+                    else { "変更なし: $n（起動時から未設定）" }
                     continue
                 }
                 [Environment]::SetEnvironmentVariable($n, $was, 'User')
                 $changed++
-                if ($was) { "戻した  : $n （起動時の値に書き戻した）" }
-                else { "削除した: $n （起動時は未設定だった）" }
+                if ($was) { "戻した  : $n（起動時の値に書き戻した）" }
+                else { "削除した: $n（起動時は未設定だった）" }
             }
             if ($changed -eq 0) { 'このリハーサルでは環境変数を変えていない' }
             ''
-            '※ 4-3-07 がこのプロセスの PATH と VIRTUAL_ENV を書き換えているが、これは'
+            '※ 4-3-07 がこのプロセスのPATHとVIRTUAL_ENVを書き換えているが、これは'
             '   プロセス内だけの変更で、ターミナルを閉じれば消える（機材には残らない）。'
             ''
             $pol = try { (Get-ExecutionPolicy -Scope CurrentUser -ErrorAction Stop).ToString() } catch { '(取得できない)' }
             if ($pol -eq $script:PolicySnapshot) {
-                "実行ポリシー(CurrentUser): $pol （起動時と同じ。変えていない）"
+                "実行ポリシー(CurrentUser): $pol（起動時と同じ。変えていない）"
             } else {
-                "実行ポリシー(CurrentUser): $($script:PolicySnapshot) → $pol に変わっている"
-                "  → Set-ExecutionPolicy -ExecutionPolicy $($script:PolicySnapshot) -Scope CurrentUser で戻す"
+                "実行ポリシー(CurrentUser): $($script:PolicySnapshot) → $polに変わっている"
+                "  → Set-ExecutionPolicy -ExecutionPolicy $($script:PolicySnapshot) -Scope CurrentUserで戻す"
             }
         }
 
@@ -1461,7 +1461,7 @@ function Read-Verdict($Step, [string]$Output, [double]$Seconds, [string]$Suggest
             Write-Host '  保留として記録し、中断する' -ForegroundColor Yellow
             return
         }
-        Write-Host '  Enter / o / n / h / m / q のいずれかを入力する' -ForegroundColor DarkGray
+        Write-Host '  Enter / o / n / h / m / qのいずれかを入力する' -ForegroundColor DarkGray
     }
 }
 
@@ -1482,7 +1482,7 @@ function Show-Timings {
     foreach ($r in $rows[0..4]) {
         $v = $script:Timings[$r.Key]
         if ($null -ne $v) { $no1 += [double]$v }
-        Write-Host ('    {0,-34} {1,8}  {2}' -f $r.Label, $(if ($null -ne $v) { "$v 秒" } else { '未計測' }), $r.Ref)
+        Write-Host ('    {0,-34} {1,8}  {2}' -f $r.Label, $(if ($null -ne $v) { "$v秒" } else { '未計測' }), $r.Ref)
     }
     Write-Host ('    {0,-34} {1,8}' -f '小計（Claude Code導入を除く）', "$([math]::Round($no1,1)) 秒") -ForegroundColor White
     Write-Host ''
@@ -1491,11 +1491,11 @@ function Show-Timings {
     foreach ($r in $rows[5..7]) {
         $v = $script:Timings[$r.Key]
         if ($null -ne $v) { $no3 += [double]$v }
-        Write-Host ('    {0,-34} {1,8}  {2}' -f $r.Label, $(if ($null -ne $v) { "$v 秒" } else { '未計測' }), $r.Ref)
+        Write-Host ('    {0,-34} {1,8}  {2}' -f $r.Label, $(if ($null -ne $v) { "$v秒" } else { '未計測' }), $r.Ref)
     }
     Write-Host ('    {0,-34} {1,8}' -f '小計', "$([math]::Round($no3,1)) 秒") -ForegroundColor White
     Write-Host ''
-    Write-Host '  Claude Codeの導入・ログイン・VS Code拡張は手動ステップのため、時計で測って記録票に書く' -ForegroundColor DarkGray
+    Write-Host '  Claude Codeの導入・ログイン・VS Code拡張は手動操作のため、時計で測って記録票に書く' -ForegroundColor DarkGray
 }
 
 function Save-Record {
@@ -1702,7 +1702,7 @@ if (-not (Test-Path $script:OutRoot)) { New-Item -ItemType Directory -Force -Pat
 Write-Head ' 事前確認書 第I部（実機確認）'
 Write-Host @"
   スクリプトの版: $script:ScriptVersion
-  対象章       : $($script:TargetChapters -join ', ')  （全 $total ステップ）
+  対象章       : $($script:TargetChapters -join ', ')  （全 $totalステップ）
   作業フォルダ : $script:WorkRoot
   テンプレート : $script:MaterialRoot\docs-template
   記録の出力先 : $script:OutRoot
@@ -1750,8 +1750,8 @@ if ($onDrive.Count -gt 0) {
     Write-Host ''
     Write-Host '  OneDrive配下を指している。クラウドへ同期される' -ForegroundColor Red
     $onDrive | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
-    Write-Host '  作業フォルダが同期されると .venv と .git が同期の対象になり、6章の所要時間の' -ForegroundColor Red
-    Write-Host '  実測が当てにならなくなる。同期中のロックで pip install が落ちることもある' -ForegroundColor Red
+    Write-Host '  作業フォルダがOneDriveの下にあると .venv と .git まで同期され、6章の所要時間の' -ForegroundColor Red
+    Write-Host '  実測が当てにならなくなる。ロックがかかってpip installが落ちることもある' -ForegroundColor Red
     Write-Host '  記録は7-3で機材から消してもクラウド側に残る' -ForegroundColor Red
     $example = Join-Path "$env:SystemDrive\" "rehearsal-$(Get-Date -Format 'yyyyMMdd')"
     Write-Host ("    例: -WorkDir {0} -OutDir {0}" -f $example) -ForegroundColor DarkGray
@@ -1762,7 +1762,7 @@ try {
     $isAdmin = (New-Object Security.Principal.WindowsPrincipal $id).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if ($isAdmin) {
         Write-Host ''
-        Write-Host '  この端末は管理者として実行されている。受講者と同じ権限で実施するため、' -ForegroundColor Red
+        Write-Host '  このスクリプトを管理者権限で実行している。受講者と同じ権限で実施するため、' -ForegroundColor Red
         Write-Host '  昇格していない通常のターミナルで開き直すことを勧める（第I部 1-2 の原則2）' -ForegroundColor Red
     } else {
         Write-Host ''
@@ -1777,7 +1777,7 @@ if ($DryRun) {
     foreach ($s in $steps) { $i++; Show-Step $s $i $total }
     Write-Host ''
     Write-Rule '='
-    Write-Host " 下見おわり（$total ステップ）" -ForegroundColor Cyan
+    Write-Host " 下見おわり（$totalステップ）" -ForegroundColor Cyan
     Write-Rule '='
     try {
         $saved = Save-StepList $steps
@@ -1822,7 +1822,7 @@ foreach ($step in $steps) {
                 Write-Label '作業' $script:WorkRoot 'White'
                 Write-Label 'テンプレ' (Join-Path $script:MaterialRoot 'docs-template') 'White'
                 Write-Label '記録' $script:OutRoot 'White'
-                Write-Host '  ここから先はファイルを作る。場所を変えるなら中断して -WorkDir から指定し直す' -ForegroundColor DarkGray
+                Write-Host '  ここから先はファイルを作る。場所を変えるなら中断して -WorkDir を指定し直す' -ForegroundColor DarkGray
                 Write-Host '  （2章の時点で記録の書き出しは始まっているので、-OutDir はここでは変えられない）' -ForegroundColor DarkGray
                 Write-Host ''
                 Write-Host '  4章の前提' -ForegroundColor Cyan
@@ -1850,7 +1850,7 @@ foreach ($step in $steps) {
                     Write-Host ("    {0}  （記録。rehearsal-check.txt と precheck-*.md）" -f $script:OutRoot) -ForegroundColor White
                 }
                 Write-Host ("    {0}  （rehearsalブランチのクローンごと）" -f $script:MaterialRoot) -ForegroundColor White
-                Write-Host '  この削除は自動では行わない（講師自身のPCで実行した場合に本体を消してしまうため）' -ForegroundColor DarkGray
+                Write-Host '  この削除は自動では行わない（講師自身のPCで実行した場合に教材のクローンを消してしまうため）' -ForegroundColor DarkGray
                 Write-Host ''
                 Write-Host '  記録には客先のネットワーク情報（プロキシのアドレス・除外リスト等）が含まれる。' -ForegroundColor Yellow
                 Write-Host '  持ち帰ったあとの取り扱いに注意し、社外・他案件へ出さない' -ForegroundColor Yellow
@@ -2008,7 +2008,7 @@ if ($script:Results.Count -eq 0) {
     }
     if ($notdone.Count -gt 0) {
         Write-Host ''
-        Write-Host '  未実施（人が操作・確認する必要がある。改めて対話モードで実施する）' -ForegroundColor Yellow
+        Write-Host '  未実施（人が操作・確認する必要がある。-Auto を付けずに実施する）' -ForegroundColor Yellow
         $notdone | ForEach-Object { Write-Host "    $($_.Id) $($_.Title)" -ForegroundColor Yellow }
     }
     if ($ng.Count -gt 0) {

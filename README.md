@@ -23,11 +23,18 @@ AI活用入門講座 SW編の**事前リハーサル**で使うものを置い�
 ```powershell
 git clone -b rehearsal --single-branch https://github.com/SEC-Online-Boot-Camp/EShop.git EShop-rehearsal
 cd EShop-rehearsal
-.\precheck.ps1 -DryRun    # 下見
-.\precheck.ps1            # 実施
+.\precheck.ps1 -DryRun            # 下見
+.\precheck.ps1 -OnSite            # 実環境リハーサル（止まる箇所を絞る）
+.\precheck.ps1                    # 全項目を1つずつ確認する
 ```
 
 `.ps1`の実行が実行ポリシーで禁止されている場合の起動方法は`precheck.ps1`の冒頭に書いてある。
+
+記録は既定でデスクトップに出る。**貸与機のデスクトップがOneDrive配下に付け替えられている場合は、同期されない場所を指定する。** そのままだと記録が客先のテナントへ同期され、機材から消してもクラウド側に残る（起動時に警告が出る）。
+
+```powershell
+.\precheck.ps1 -OnSite -OutDir C:\rehearsal-out
+```
 
 ## 保守
 

@@ -77,12 +77,14 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '88f52705（2026-09-17 配備）'
+$script:ScriptVersion = '582967c3（2026-09-17 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
-# PowerShell 7 は [Console]::OutputEncoding が既定でUTF-8だが、Pythonはパイプ出力のとき
-# ロケールの文字コード（日本語WindowsならCP932）で書くため、揃えないと記録が文字化けし、
-# seedの件数の自動判定も誤る（2026-09-17 にPowerShell 7.6.6で実測）。
+# Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
+# 揃えないと記録が文字化けし、seedの件数の自動判定も誤る。
+# [Console]::OutputEncoding は機材によって変わる（プロファイルでUTF-8にしてある機材は
+# 65001、素のWindowsは932）。版では決まらないので、実際の値を読んで合わせる。
+# 65001（PowerShell 7.6.6）と 932（PowerShell 5.1）の両方で文字化け0を確認済み。
 $script:ConsoleCodePage = [Console]::OutputEncoding.CodePage
 $env:PYTHONIOENCODING = if ($script:ConsoleCodePage -eq 65001) { 'utf-8' } else { "cp$($script:ConsoleCodePage)" }
 
@@ -115,15 +117,52 @@ function Remove-AnsiEscape([string]$Text) {
     return ($Text -replace "$esc\[[0-9;?]*[ -/]*[@-~]", '' -replace "$esc\][^$esc]*($([char]7)|$esc\\)", '')
 }
 
+# 講座で使う公開ホスト。社内の除外リスト（NO_PROXY・ProxyOverride）に載っていることが
+# あるが、これを伏せると「どのホストが落ちたのか」が記録から読めなくなり、10章の申請に
+# 上げる材料が消える。公開情報なので伏せる必要もない。
+$script:RedactionAllow = @(
+    'claude.ai', 'claude.com', 'platform.claude.com', 'api.anthropic.com', 'downloads.claude.ai',
+    'anthropic.com', 'github.com', 'githubusercontent.com', 'pypi.org', 'pythonhosted.org',
+    'files.pythonhosted.org', 'marketplace.visualstudio.com', 'visualstudio.com', 'vsassets.io',
+    'microsoft.com', 'python.org'
+)
+
+function Test-RedactionAllowed([string]$Text) {
+    $t = $Text.Trim().TrimStart('.', '*').TrimEnd('.')
+    foreach ($a in $script:RedactionAllow) {
+        if ($t -eq $a -or $t.EndsWith(".$a")) { return $true }
+    }
+    return $false
+}
+
+function Add-RedactionToken([string]$Text, [string]$Label) {
+    if (-not $Text) { return }
+    $t = $Text.Trim()
+    if (-not $t) { return }
+    if ($t.Length -lt 5) { return }
+    if ($t -match '^(localhost|127\.0\.0\.1|::1|<local>|\*)$') { return }
+    if (Test-RedactionAllowed $t) { return }
+    if ($script:Redactions | Where-Object { $_.Text -eq $t }) { return }
+    $script:Redactions += [pscustomobject]@{ Text = $t; Label = $Label }
+    # ProxyOverride は「*.社内ドメイン」の形で書かれるが、出力に出るのは * の付かない形
+    if ($t.StartsWith('*.')) { Add-RedactionToken $t.Substring(1) $Label }
+}
+
 function Add-Redaction([string]$Value, [string]$Label) {
     if (-not $Value) { return }
     foreach ($tok in ($Value -split '[,;]')) {
         $t = $tok.Trim()
         if (-not $t) { continue }
-        if ($t -match '^(localhost|127\.0\.0\.1|::1|<local>|\*)$') { continue }
-        if ($t.Length -lt 5) { continue }
-        if ($script:Redactions | Where-Object { $_.Text -eq $t }) { continue }
-        $script:Redactions += [pscustomobject]@{ Text = $t; Label = $Label }
+        Add-RedactionToken $t $Label
+        # 環境変数には http://proxy.example.local:8080 の形で入るが、pip や git が失敗した
+        # ときの文面には proxy.example.local:8080 や proxy.example.local の形で出る。
+        # 完全一致だけだと素通りするため、ホスト名だけでも伏せられるように登録する。
+        $candidate = if ($t -match '^[a-zA-Z][a-zA-Z0-9+.-]*://') { $t } else { "http://$t" }
+        $u = try { [Uri]$candidate } catch { $null }
+        if ($u -and $u.Host) {
+            Add-RedactionToken $u.Authority $Label
+            Add-RedactionToken $u.Host $Label
+        }
     }
 }
 
@@ -132,8 +171,12 @@ function Hide-NetworkInfo([string]$Text) {
     # pip や git が失敗したときの文面にプロキシのアドレスが混ざることがあるため、
     # 画面には出したまま、ファイルへ書く分だけ置き換える。
     if (-not $Text) { return $Text }
-    foreach ($r in $script:Redactions) {
-        $Text = $Text -replace [regex]::Escape($r.Text), $r.Label
+    foreach ($r in ($script:Redactions | Sort-Object { $_.Text.Length } -Descending)) {
+        $pat = [regex]::Escape($r.Text)
+        # NO_PROXY は「.社内ドメイン」の形で書かれる。手前のラベルを残すと社内のホスト名が
+        # 部分的に漏れる（<ホスト名>.社内ドメイン → <ホスト名>だけ残る）ので、ラベルごと置き換える
+        if ($r.Text.StartsWith('.')) { $pat = '[A-Za-z0-9_-]+' + $pat }
+        $Text = $Text -replace $pat, $r.Label
     }
     # IPアドレス（CIDR・ポート付きも）。127.0.0.1 は残す
     $Text = $Text -replace '(?<!\d)(?!127\.0\.0\.1(?!\d))\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(/\d{1,2})?(:\d+)?', '<アドレス>'
@@ -193,7 +236,7 @@ function New-Step {
         [string]$Show,
         [scriptblock]$Cmd,
         [scriptblock]$Hint,
-        [scriptblock]$When,
+        [string]$SkipImpact,
         [string]$Ask,
         [string]$TimeKey,
         [switch]$NeedsInput,
@@ -203,7 +246,7 @@ function New-Step {
     $script:Steps += [pscustomobject]@{
         Id = $Id; Ch = $Ch; Title = $Title; Kind = $Kind
         Purpose = $Purpose; Expect = $Expect; Show = $Show
-        Cmd = $Cmd; Hint = $Hint; When = $When; Ask = $Ask; TimeKey = $TimeKey
+        Cmd = $Cmd; Hint = $Hint; SkipImpact = $SkipImpact; Ask = $Ask; TimeKey = $TimeKey
         NeedsInput = [bool]$NeedsInput; Site = $Site
     }
 }
@@ -235,7 +278,9 @@ function Get-ShowText($Step) {
 function Get-VenvPython {
     $p = Join-Path $script:SrcDir '.venv\Scripts\python.exe'
     if (Test-Path $p) { return $p }
-    return 'python'
+    # ここで 'python' に落とすと、貸与機のグローバルなPythonに pip install が走る。
+    # 7章の原状復帰はcloneしたフォルダと環境変数しか戻さないので、それは回収できない。
+    throw "仮想環境が無い: $p （4-3-06 のvenv作成が失敗している。ここから先は実行しない）"
 }
 
 function Invoke-InSrc([scriptblock]$Block) {
@@ -326,8 +371,28 @@ function Set-StepList {
         }
 
     New-Step -Id '2-2-a' -Ch '2' -Title 'VS Codeの版' -Kind auto `
+        -Purpose '「PATHに追加」を選ばずに入れてあると code が解決できない。導入の有無と区別する' `
         -Expect '導入済みであること' `
-        -Cmd { code --version }
+        -Show 'code --version（解決できない場合は実体の有無も見る）' `
+        -Cmd {
+            $v = try { code --version 2>&1 } catch { $null }
+            if ($v) { $v } else { 'code コマンドを解決できない' }
+            foreach ($p in (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\Code.exe'),
+                'C:\Program Files\Microsoft VS Code\Code.exe') {
+                if (Test-Path $p) { "実体あり: $p"; break }
+            }
+        } `
+        -Hint {
+            param($text)
+            if ($text -match '(?m)^\s*\d+\.\d+') { Write-Host '  → 版を取得できた' -ForegroundColor Magenta; return 'OK' }
+            if ($text -match '実体あり:') {
+                Write-Host '  → 導入されているが code がPATHに無い。受講者にも同じ現象が出る' -ForegroundColor Yellow
+                Write-Host '     講座では code コマンドを使わないため実害は無いが、手順書の補足に載せる' -ForegroundColor Yellow
+                return '保留'
+            }
+            Write-Host '  → VS Codeが見つからない' -ForegroundColor Red
+            return 'NG'
+        }
 
     New-Step -Id '2-2-b' -Ch '2' -Title 'Pythonの版と実体パス' -Kind auto `
         -Purpose '依存パッケージが完全固定のため、版によってwheelが無くビルドに失敗する（4-2）' `
@@ -352,8 +417,15 @@ function Set-StepList {
         }
 
     New-Step -Id '2-2-c' -Ch '2' -Title 'Gitの版' -Kind auto `
+        -Purpose '4-3-05 の clone に必要。無ければ受講者にも手動導入が要る' `
         -Expect '導入済みであること' `
-        -Cmd { git --version }
+        -Cmd { git --version } `
+        -Hint {
+            param($text)
+            if ($text -match 'git version') { Write-Host '  → 導入されている' -ForegroundColor Magenta; return 'OK' }
+            Write-Host '  → git が見つからない。4章は実施できない' -ForegroundColor Red
+            return 'NG'
+        }
 
     New-Step -Id '2-2-d' -Ch '2' -Title 'PowerShellの版' -Kind auto `
         -Purpose '5.1と7ではプロキシの読み先が違う（3-1）' `
@@ -637,11 +709,25 @@ function Set-StepList {
   取得元は claude.ai、インストーラ本体の配布元は downloads.claude.ai。
   ユーザー領域に入るため管理者権限は不要。7-2で /logout と設定の削除を行う。
 "@ `
-        -Cmd { irm https://claude.ai/install.ps1 | iex }
+        -Cmd {
+            irm https://claude.ai/install.ps1 | iex
+            # インストーラはUser PATHを更新するが、起動済みのこのプロセスには反映されない。
+            # 直後の 4-3-02 が「入っていない」と誤って見えるのを防ぐ。
+            $env:PATH = [Environment]::GetEnvironmentVariable('PATH', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH', 'User')
+            'このプロセスのPATHを読み直した（Machine + User）'
+        } `
+        -SkipImpact 'スキップすると 4-3-02〜4-3-04（版の記録・ログイン・VS Code拡張）が実施できない'
 
     New-Step -Id '4-3-02' -Ch '4' -Title 'Claude Codeの版' -Kind auto `
         -Expect '版を記録する（本番と同一かを12章で照合する）' `
-        -Cmd { claude --version }
+        -Cmd { claude --version } `
+        -Hint {
+            param($text)
+            if ($text -match '\d+\.\d+') { Write-Host '  → 版を取得できた' -ForegroundColor Magenta; return 'OK' }
+            Write-Host '  → claude を解決できない。導入に失敗したか、PATHが通っていない' -ForegroundColor Red
+            Write-Host '     4-3-01 をスキップしたならここもNGでよい。実行したなら新しいターミナルで試す' -ForegroundColor Red
+            return 'NG'
+        }
 
     New-Step -Id '4-3-03' -Ch '4' -Title 'Claude Codeの起動とログイン（手動）' -Kind manual `
         -Purpose '対話セッションになるため、このスクリプトの外で行う' `
@@ -694,7 +780,15 @@ function Set-StepList {
     New-Step -Id '4-3-06' -Ch '4' -Title '仮想環境の作成' -Kind auto -TimeKey 'venv' `
         -Expect '.venv が作られる（社内実測8.5秒）' `
         -Show 'cd src ; python -m venv .venv' `
-        -Cmd { Invoke-InSrc { python -m venv .venv 2>&1; "作成先: $(Join-Path $PWD '.venv')" } }
+        -Cmd { Invoke-InSrc { python -m venv .venv 2>&1; "作成先: $(Join-Path $PWD '.venv')" } } `
+        -Hint {
+            param($text)
+            $p = Join-Path $script:SrcDir '.venv\Scripts\python.exe'
+            if (Test-Path $p) { Write-Host '  → .venv\Scripts\python.exe ができている' -ForegroundColor Magenta; return 'OK' }
+            Write-Host '  → .venv ができていない。ここで止める' -ForegroundColor Red
+            Write-Host '     このまま進むと貸与機のPythonに pip install してしまうため、4-3-08以降は実行しない' -ForegroundColor Red
+            return 'NG'
+        }
 
     New-Step -Id '4-3-07' -Ch '4' -Title '仮想環境の有効化（activate の可否）' -Kind auto `
         -Purpose '実行ポリシーで .ps1 が禁止されていると失敗する。代替1行が効くかをここで確定する' `
@@ -739,10 +833,19 @@ function Set-StepList {
     New-Step -Id '4-3-08' -Ch '4' -Title '依存パッケージのインストール' -Kind auto -TimeKey 'pip' `
         -Purpose '最も伸びやすい。TLS傍受があるとここだけ証明書エラーで落ちる。ケースEの判定はここで行う' `
         -Expect '成功すること（社内実測31.4秒）' `
-        -Show 'pip install -r requirements.txt' `
-        -Cmd { Invoke-InSrc { & (Get-VenvPython) -m pip install -r requirements.txt 2>&1 } } `
+        -Show @"
+  pip install -r requirements.txt
+
+  precheck では --retries 1 を足す。pipの既定は5回再試行するため、到達できない機材だと
+  十数分無反応になる。成功する機材では所要時間は変わらないので、6章の実測にも使える。
+"@ `
+        -Cmd { Invoke-InSrc { & (Get-VenvPython) -m pip install --retries 1 -r requirements.txt 2>&1 } } `
         -Hint {
             param($text)
+            if ($text -match '仮想環境が無い') {
+                Write-Host '  → 仮想環境が無いため実行していない。4-3-06 を先に通す' -ForegroundColor Red
+                return 'NG'
+            }
             if ($text -match 'CERTIFICATE_VERIFY_FAILED|SSLError') {
                 Write-Host '  → TLS傍受あり（ケースE）。pipだけが証明書で落ちるのが典型' -ForegroundColor Red
                 Write-Host '     付録Cの対処へ。検証の無効化は使わない。証明書の名称はIT部門に確認（10章）' -ForegroundColor Red
@@ -763,6 +866,10 @@ function Set-StepList {
         -Cmd { Invoke-InSrc { & (Get-VenvPython) -m app.seed 2>&1 } } `
         -Hint {
             param($text)
+            if ($text -match '仮想環境が無い') {
+                Write-Host '  → 仮想環境が無いため実行していない。4-3-06 を先に通す' -ForegroundColor Red
+                return 'NG'
+            }
             if ($text -match 'ユーザー2件・商品5件') { Write-Host '  → 期待どおりの件数' -ForegroundColor Magenta; return 'OK' }
             if ($text -match 'すでにデータが投入されています') {
                 Write-Host '  → DBが残っているため投入をスキップした。件数を確認できていない' -ForegroundColor Yellow
@@ -774,37 +881,94 @@ function Set-StepList {
         }
 
     New-Step -Id '4-3-10' -Ch '4' -Title 'サーバー起動とSwagger UIの表示' -Kind auto `
-        -Purpose '127.0.0.1がプロキシに投げられていないかを実物で確かめる' `
+        -Purpose 'アプリが起動して応答を返すことを確かめる。あわせてループバックの迂回も測る' `
         -Expect 'http://127.0.0.1:8000/docs が 200 を返す' `
         -Show @"
   uvicorn app.main:app --reload
   → ブラウザで http://127.0.0.1:8000/docs を開く
 
-  このスクリプトでは、サーバーを裏で起動して /docs のステータスを取り、最後に停止する。
+  このスクリプトでは、サーバーを裏で起動して /docs のステータスを2通りで取り、最後に停止する。
+  ・プロキシを使わない（--noproxy '*'）… サーバーが起動して応答を返すか
+  ・環境変数の経路をそのまま使う        … 127.0.0.1 がプロキシに投げられていないか
+
+  ブラウザが使うのはシステム設定の経路なので、その判定は 3-5-b が正本になる。
 "@ `
         -Cmd {
             Invoke-InSrc {
+                # 既に8000番が塞がっていると、古いサーバーに当たって200が返り誤ってOKになる
+                $busy = $false
+                try {
+                    $l = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 8000)
+                    $l.Start(); $l.Stop()
+                } catch { $busy = $true }
+                if ($busy) {
+                    '8000番が既に使われている。別のサーバーに当たるため判定できない'
+                    '  → 起動済みのuvicornを止めてからやり直す'
+                    return
+                }
                 $py = Get-VenvPython
+                $log = Join-Path $env:TEMP "precheck-uvicorn-$PID.log"
+                $err = Join-Path $env:TEMP "precheck-uvicorn-$PID.err"
+                # 隠しウィンドウでの起動は監視側から見て説明が要る形になるため -NoNewWindow にする。
+                # あわせて出力を受け取り、起動に失敗した理由が記録に残るようにする。
                 $proc = Start-Process -FilePath $py -ArgumentList '-m', 'uvicorn', 'app.main:app' `
-                    -WorkingDirectory (Get-Location).Path -PassThru -WindowStyle Hidden
+                    -WorkingDirectory (Get-Location).Path -PassThru -NoNewWindow `
+                    -RedirectStandardOutput $log -RedirectStandardError $err
                 try {
                     $code = ''
-                    for ($i = 0; $i -lt 20; $i++) {
+                    # 貸与機はウイルス対策の常駐で初回importが延びる。20秒では足りないことがある
+                    for ($i = 0; $i -lt 40; $i++) {
                         Start-Sleep -Seconds 1
+                        if ($proc.HasExited) { break }
                         $code = (curl.exe -s -o NUL -w "%{http_code}" --max-time 5 --noproxy '*' http://127.0.0.1:8000/docs 2>&1)
                         if ($code -eq '200') { break }
                     }
-                    "http://127.0.0.1:8000/docs => $code"
-                    if ($code -eq '200') { 'ブラウザでも開いて画面を確認する（このまま起動し続けたい場合は手動で起動し直す）' }
+                    "http://127.0.0.1:8000/docs => $code  （プロキシを使わずに確認）"
+                    if ($code -eq '200') {
+                        # ここだけ --noproxy を外す。環境変数の経路でループバックが迂回されるかの実測。
+                        $via = (curl.exe -s -o NUL -w "%{http_code}" --max-time 10 http://127.0.0.1:8000/docs 2>&1)
+                        if ($via -eq '200') {
+                            "環境変数の経路でも 200。127.0.0.1 はプロキシに投げられていない"
+                        } else {
+                            "環境変数の経路では $via。127.0.0.1 がプロキシに投げられている可能性がある"
+                            "  → NO_PROXY にループバックを足す案内が要る（3-5-b と 3-6-a を見る）"
+                        }
+                        'ブラウザでも開いて画面を確認する（起動したままにしたい場合は手動で起動し直す）'
+                    } else {
+                        'サーバーが応答を返していない。起動時の出力を見る:'
+                        foreach ($f in $err, $log) {
+                            if (Test-Path $f) {
+                                $tail = @(Get-Content $f -Tail 15 -ErrorAction SilentlyContinue)
+                                if ($tail.Count -gt 0) { "  --- $(Split-Path $f -Leaf) ---"; $tail | ForEach-Object { "  $_" } }
+                            }
+                        }
+                    }
                 } finally {
                     if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force; 'サーバーを停止した' }
+                    Remove-Item $log, $err -Force -ErrorAction SilentlyContinue
                 }
             }
         } `
         -Hint {
             param($text)
-            if ($text -match 'docs => 200') { Write-Host '  → 200。127.0.0.1はプロキシに投げられていない' -ForegroundColor Magenta; return 'OK' }
-            Write-Host '  → 200が返っていない。3-5のループバック迂回を見直す' -ForegroundColor Red
+            if ($text -match '仮想環境が無い') {
+                Write-Host '  → 仮想環境が無いため実行していない。4-3-06 を先に通す' -ForegroundColor Red
+                return 'NG'
+            }
+            if ($text -match '8000番が既に使われている') {
+                Write-Host '  → 判定できない。8000番を空けてからやり直す' -ForegroundColor Yellow
+                return '保留'
+            }
+            if ($text -match 'docs => 200') {
+                if ($text -match 'プロキシに投げられている可能性') {
+                    Write-Host '  → サーバーは起動した。ただしループバックがプロキシに向いている' -ForegroundColor Yellow
+                    Write-Host '     ブラウザ側の判定は 3-5-b を見る。受講者への案内が要るかはそこで決める' -ForegroundColor Yellow
+                    return '保留'
+                }
+                Write-Host '  → サーバーが起動して応答を返した。ループバックの迂回も問題ない' -ForegroundColor Magenta
+                return 'OK'
+            }
+            Write-Host '  → 200が返っていない。上の起動時の出力を見る' -ForegroundColor Red
             return 'NG'
         }
 
@@ -844,7 +1008,8 @@ function Set-StepList {
                 $files | ForEach-Object { Copy-Item $_.FullName (Join-Path 'docs' $_.Name) -Force }
                 Get-ChildItem docs | Select-Object Name, Length
             }
-        }
+        } `
+        -SkipImpact 'スキップすると 4-4-03（成果物の確認）以降と 5章の#5 が実施できない'
 
     New-Step -Id '4-4-02' -Ch '4' -Title 'No3ブランチの取得と切り替え' -Kind auto -TimeKey 'fetch' `
         -Purpose 'ここで再びネットワークを使う。No.1が通っても省略しない' `
@@ -935,6 +1100,8 @@ function Set-StepList {
             return 'NG'
         }
 
+    # 4-5 を 4-4-05 と 4-4-06 の間に置いてあるのは実行順のため（No3のseedが済んでいないと
+    # 注文が通らない）。記録の並びが 4-4-05 → 4-5 → 4-4-06 になるのは意図したもの。
     New-Step -Id '4-5' -Ch '4' -Title 'Swagger UIでの注文確定（手動）' -Kind manual `
         -Purpose 'pytest は別DBを使うため、ecommerce.db の削除漏れはここでしか表面化しない' `
         -Show @"
@@ -1090,6 +1257,7 @@ function Set-StepList {
   対象: HTTP_PROXY / HTTPS_PROXY / NO_PROXY / PIP_CERT / NODE_EXTRA_CA_CERTS
 
   変数ごとに「変更なし」「戻した」「削除した」を表示する。
+  値そのものは表示しない（記録に客先のネットワーク情報を残さないため）。
 "@ `
         -Cmd {
             $changed = 0
@@ -1097,16 +1265,19 @@ function Set-StepList {
                 $now = [Environment]::GetEnvironmentVariable($n, 'User')
                 $was = $script:EnvSnapshot[$n]
                 if ($now -eq $was) {
-                    if ($was) { "変更なし: $n = $was （元からあった値。そのまま残す）" }
+                    if ($was) { "変更なし: $n （元から設定されていた。その値のまま残す）" }
                     else { "変更なし: $n （起動時から未設定）" }
                     continue
                 }
                 [Environment]::SetEnvironmentVariable($n, $was, 'User')
                 $changed++
-                if ($was) { "戻した  : $n = $was （リハーサル中は $now だった）" }
-                else { "削除した: $n （リハーサル中に $now を設定していた）" }
+                if ($was) { "戻した  : $n （起動時の値に書き戻した）" }
+                else { "削除した: $n （起動時は未設定だった）" }
             }
             if ($changed -eq 0) { 'このリハーサルでは環境変数を変えていない' }
+            ''
+            '※ 4-3-07 がこのプロセスの PATH と VIRTUAL_ENV を書き換えているが、これは'
+            '   プロセス内だけの変更で、ターミナルを閉じれば消える（機材には残らない）。'
             ''
             $pol = try { (Get-ExecutionPolicy -Scope CurrentUser -ErrorAction Stop).ToString() } catch { '(取得できない)' }
             if ($pol -eq $script:PolicySnapshot) {
@@ -1280,6 +1451,8 @@ function Save-Record {
     $null = $sb.AppendLine("- 記録した時点: $(Get-Date -Format 'HH:mm:ss')（1ステップごとに更新される）")
     $null = $sb.AppendLine("- スクリプトの版: $script:ScriptVersion")
     $null = $sb.AppendLine("- PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))　文字コード: CP$($script:ConsoleCodePage) / PYTHONIOENCODING=$($env:PYTHONIOENCODING)")
+    $null = $sb.AppendLine('- このファイルには客先のネットワーク情報を残さない。プロキシのアドレス・除外リスト・PACのURL・IPアドレスは伏せ字に置き換え、3-4-3で入力したURLは書かない')
+    $null = $sb.AppendLine('- ただし画面の記録（rehearsal-check.txt）は伏せていない。入力した文字もそのまま残るため、持ち帰りと削除は7-3に従う')
     $null = $sb.AppendLine()
     $null = $sb.AppendLine('## 判定一覧')
     $null = $sb.AppendLine()
@@ -1374,8 +1547,6 @@ $script:RepoDir = Join-Path $script:WorkRoot 'EShop'
 $script:SrcDir = Join-Path $script:RepoDir 'src'
 $script:OutRoot = if ($OutDir) { $OutDir } else { $desktop }
 $script:MaterialRoot = if ($MaterialDir) { $MaterialDir } elseif ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-$script:ChangedEnv = $false
-
 # 7-2-b で「開始時点に戻す」ために、いまのUser環境変数を控える。
 # 元から設定されている値を消してしまわないようにするため。実行する機材に
 # proxy や PIP_CERT が元から入っていることがあり、無条件に削除すると事故になる。
@@ -1420,6 +1591,9 @@ $script:TargetChapters = $targetChapters
 $steps = $script:Steps | Where-Object { $targetChapters -contains $_.Ch }
 if ($OnSite) { $steps = $steps | Where-Object { $_.Site -ne 'materials' } }
 $total = @($steps).Count
+# -OnSite では5章が丸ごと外れる。指定した章ではなく、実際に走る章を記録に書く
+$script:TargetChapters = @($steps | ForEach-Object { $_.Ch } | Select-Object -Unique | Sort-Object)
+if ($script:TargetChapters.Count -eq 0) { $script:TargetChapters = @('(該当なし)') }
 
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $script:RecordPath = Join-Path $script:OutRoot "precheck-result-$stamp.md"
@@ -1435,7 +1609,7 @@ Write-Host @"
   既定はスキップ、y を押したときだけ実行する（すべて7章で元へ戻す）。
 
   スクリプトの版: $script:ScriptVersion
-  対象章       : $($targetChapters -join ', ')  （全 $total ステップ）
+  対象章       : $($script:TargetChapters -join ', ')  （全 $total ステップ）
   作業フォルダ : $script:WorkRoot
   テンプレート : $script:MaterialRoot\docs-template
   記録の出力先 : $script:OutRoot
@@ -1465,6 +1639,15 @@ if ($DryRun) {
 } else {
     Write-Host "  判定と出力の記録     : $script:RecordPath" -ForegroundColor Green
     Write-Host '  （1ステップごとに書き足すので、途中で中断しても残る）' -ForegroundColor DarkGray
+}
+
+if ($script:OutRoot -match '(?i)OneDrive') {
+    # 貸与機のデスクトップが客先テナントのOneDrive配下に付け替えられていることがある。
+    # そのまま書くと、7-3で機材から消してもクラウド側とごみ箱に残る。
+    Write-Host ''
+    Write-Host '  出力先がOneDrive配下にある。記録がクラウドへ同期される' -ForegroundColor Red
+    Write-Host '  7-3で機材から消してもクラウド側に残るため、同期されない場所を指定し直すこと' -ForegroundColor Red
+    Write-Host '    例: -OutDir C:\rehearsal-out' -ForegroundColor DarkGray
 }
 
 try {
@@ -1610,6 +1793,9 @@ foreach ($step in $steps) {
             Write-Rule
             $script:Captured['3-4-3'] = "共有リンクの到達性 => $code"
             $script:Results[-1].Output = "共有リンクの到達性 => $code（URLは記録しない）"
+            # Add-Result のときの書き出しは既に終わっているため、書き足した分をここで反映する。
+            # そうしないと、この直後に中断したときに到達性の結果だけ記録から落ちる。
+            try { Save-Record | Out-Null } catch { }
         }
         continue
     }
@@ -1637,12 +1823,17 @@ foreach ($step in $steps) {
     if ($step.Kind -eq 'change') {
         Write-Host ''
         Write-Host '  このステップは機材の状態を変える。7章で元へ戻す対象になる' -ForegroundColor Red
+        if ($step.SkipImpact) { Write-Host "  $($step.SkipImpact)" -ForegroundColor Yellow }
         if ($Auto) {
             if (-not $AllowChanges) {
-                Add-Result $step 'スキップ' '' '自動モードでは設定変更を実行しない（-AllowChanges で実行する）'
+                $memo = '自動モードでは設定変更を実行しない（-AllowChanges で実行する）'
+                if ($step.SkipImpact) { $memo += "。$($step.SkipImpact)" }
+                Add-Result $step 'スキップ' '' $memo
                 Write-Host '  スキップとして記録（実行するには -AllowChanges を付ける）' -ForegroundColor DarkGray
                 continue
             }
+            # いまは該当するステップが無いが、実行中に入力を求める change ステップを
+            # 足したときに -Auto が固まらないようにするための歯止め
             if ($step.NeedsInput) {
                 Add-Result $step 'スキップ' '' '実行中に入力を求めるため自動モードでは実行できない'
                 Write-Host '  実行中に入力を求めるステップのためスキップ' -ForegroundColor DarkGray
@@ -1655,7 +1846,9 @@ foreach ($step in $steps) {
         $ans = Read-Key '[y]=実行する   [Enter]=スキップ（既定）   [q]=中断'
         if ($ans.ToLower() -eq 'q') { $script:Aborted = $true; break }
         if ($ans.ToLower() -ne 'y') {
-            Add-Result $step 'スキップ' '' '設定変更のため実行しなかった'
+            $memo = '設定変更のため実行しなかった'
+            if ($step.SkipImpact) { $memo += "。$($step.SkipImpact)" }
+            Add-Result $step 'スキップ' '' $memo
             Write-Host '  スキップとして記録' -ForegroundColor DarkGray
             continue
         }
@@ -1742,9 +1935,16 @@ if ($script:Results.Count -eq 0) {
 
 if ($script:Timings.Count -gt 0) { Show-Timings }
 
-if ($script:ChangedEnv) {
+# 起動時に控えた値と突き合わせる。スクリプトが設定していなくても、インストーラや
+# 手で足した分はここに出る。変数名だけを出し、値は出さない。
+$envDiff = @()
+foreach ($n in $script:EnvNames) {
+    if ([Environment]::GetEnvironmentVariable($n, 'User') -ne $script:EnvSnapshot[$n]) { $envDiff += $n }
+}
+if ($envDiff.Count -gt 0) {
     Write-Host ''
-    Write-Host '  このセッションでプロキシの環境変数を設定した。7-2-bで開始時点の値に戻すこと' -ForegroundColor Red
+    Write-Host "  User環境変数が起動時から変わっている: $($envDiff -join ', ')" -ForegroundColor Red
+    Write-Host '  7-2-b を実行して開始時点の値に戻すこと' -ForegroundColor Red
 }
 
 try {

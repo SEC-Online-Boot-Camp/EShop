@@ -38,6 +38,11 @@
     引数
 
         -DryRun          何も実行せず、全ステップの内容だけを順に表示する（下見用）
+        -Auto            確認を求めずに実行する。判定の根拠があるステップは自動で判定し、
+                         無いものは「自動」として記録する。人が操作するステップ
+                         （手動操作・聞き取り）は「未実施」として記録し、飛ばす
+        -AllowChanges    -Auto のときに、機材の状態を変えるステップも実行する
+                         （既定では実行しない）
         -Chapter 2,3     指定した章だけを実施する（既定は2〜7章すべて）
         -WorkDir <path>  EShopをcloneする作業フォルダ（既定 Desktop\rehearsal）
         -MaterialDir <p> docs-template があるフォルダ（4-4-01で使う。既定はこのスクリプトの場所）
@@ -48,6 +53,8 @@
 [CmdletBinding()]
 param(
     [switch]$DryRun,
+    [switch]$Auto,
+    [switch]$AllowChanges,
     [string[]]$Chapter,
     [string]$WorkDir,
     [string]$MaterialDir,
@@ -115,12 +122,14 @@ function New-Step {
         [scriptblock]$Hint,
         [scriptblock]$When,
         [string]$Ask,
-        [string]$TimeKey
+        [string]$TimeKey,
+        [switch]$NeedsInput
     )
     $script:Steps += [pscustomobject]@{
         Id = $Id; Ch = $Ch; Title = $Title; Kind = $Kind
         Purpose = $Purpose; Expect = $Expect; Show = $Show
         Cmd = $Cmd; Hint = $Hint; When = $When; Ask = $Ask; TimeKey = $TimeKey
+        NeedsInput = [bool]$NeedsInput
     }
 }
 
@@ -240,8 +249,8 @@ function Set-StepList {
             param($text)
             if ($text -match 'Free\(GB\)[\s\S]*?([\d\.]+)\s*$') {
                 $free = [double]$Matches[1]
-                if ($free -lt 2) { Write-Host "  → 空きが2GBを下回っている（$free GB）" -ForegroundColor Red }
-                else { Write-Host "  → 空きは足りている（$free GB）" -ForegroundColor Magenta }
+                if ($free -lt 2) { Write-Host "  → 空きが2GBを下回っている（$free GB）" -ForegroundColor Red; return 'NG' }
+                else { Write-Host "  → 空きは足りている（$free GB）" -ForegroundColor Magenta; return 'OK' }
             }
         }
 
@@ -266,14 +275,17 @@ function Set-StepList {
         } `
         -Hint {
             param($text)
+            $ng = $false
             if ($text -match 'Python\s+3\.(\d+)') {
                 $minor = [int]$Matches[1]
-                if ($minor -lt 11) { Write-Host "  → 3.11未満（3.$minor）。要件を満たさない" -ForegroundColor Red }
+                if ($minor -lt 11) { Write-Host "  → 3.11未満（3.$minor）。要件を満たさない" -ForegroundColor Red; $ng = $true }
                 else { Write-Host "  → 3.$minor で要件を満たす" -ForegroundColor Magenta }
-            }
+            } else { $ng = $true }
             if ($text -match 'WindowsApps') {
                 Write-Host '  → Microsoft Storeのエイリアスを指している。実体のPythonが入っていない' -ForegroundColor Red
+                $ng = $true
             }
+            if ($ng) { return 'NG' } else { return 'OK' }
         }
 
     New-Step -Id '2-2-c' -Ch '2' -Title 'Gitの版' -Kind auto `
@@ -371,8 +383,10 @@ function Set-StepList {
             if ($bad.Count -gt 0) {
                 Write-Host '  → 到達できていないホスト（10章の申請対象）' -ForegroundColor Red
                 $bad | ForEach-Object { Write-Host "     $_" -ForegroundColor Red }
+                return 'NG'
             } else {
                 Write-Host '  → 全ホストがTLSまで到達している' -ForegroundColor Magenta
+                return 'OK'
             }
         }
 
@@ -417,8 +431,10 @@ function Set-StepList {
             param($text)
             if ($text -match 'False') {
                 Write-Host '  → 迂回されない。環境変数を設定する場合は NO_PROXY に localhost,127.0.0.1,::1 を必ず入れる' -ForegroundColor Red
+                return 'NG'
             } else {
                 Write-Host '  → 迂回される。Swagger UI の表示は問題ない' -ForegroundColor Magenta
+                return 'OK'
             }
         }
 
@@ -433,7 +449,7 @@ function Set-StepList {
 "@ `
         -Ask 'ケース（A / B / C / D / E）'
 
-    New-Step -Id '3-6-b' -Ch '3' -Title 'プロキシの環境変数を設定する' -Kind change `
+    New-Step -Id '3-6-b' -Ch '3' -Title 'プロキシの環境変数を設定する' -Kind change -NeedsInput `
         -Purpose 'ケースB・Cのときだけ実施する。7-2-bで必ず削除する' `
         -Expect 'setx が成功する（新しく開くプロセスにのみ効く）' `
         -Show @"
@@ -519,6 +535,15 @@ function Set-StepList {
                 if (Test-Path $script:RepoDir) { "既に存在するため clone をスキップ: $($script:RepoDir)"; return }
                 git clone https://github.com/SEC-Online-Boot-Camp/EShop.git 2>&1
             } finally { Pop-Location }
+        } `
+        -Hint {
+            param($text)
+            if (Test-Path (Join-Path $script:RepoDir 'src')) {
+                Write-Host '  → cloneできている（src が見える）' -ForegroundColor Magenta
+                return 'OK'
+            }
+            Write-Host '  → cloneできていない。github.com への到達を3-4で確認する' -ForegroundColor Red
+            return 'NG'
         }
 
     New-Step -Id '4-3-06' -Ch '4' -Title '仮想環境の作成' -Kind auto -TimeKey 'venv' `
@@ -561,7 +586,9 @@ function Set-StepList {
             }
             if ($text -notmatch '\.venv') {
                 Write-Host '  → python/pytest が .venv 配下を指していない。ここが揃わないと以降が別環境になる' -ForegroundColor Red
+                return 'NG'
             }
+            return 'OK'
         }
 
     New-Step -Id '4-3-08' -Ch '4' -Title '依存パッケージのインストール' -Kind auto -TimeKey 'pip' `
@@ -577,12 +604,21 @@ function Set-StepList {
             if ($text -match 'Failed building wheel|error: subprocess-exited-with-error') {
                 Write-Host '  → wheelが無くソースビルドに落ちている。Pythonの版を合わせる判断が必要（4-2）' -ForegroundColor Red
             }
+            if ($text -match '(?m)^\s*ERROR:' -or $text -match 'CERTIFICATE_VERIFY_FAILED|SSLError|Failed building wheel') { return 'NG' }
+            if ($text -match 'Successfully installed|Requirement already satisfied') { return 'OK' }
+            return $null
         }
 
     New-Step -Id '4-3-09' -Ch '4' -Title '初期データの投入' -Kind auto -TimeKey 'seed' `
         -Expect '「ユーザー2件・商品5件を投入しました。」（社内実測1.9秒）' `
         -Show 'python -m app.seed' `
-        -Cmd { Invoke-InSrc { & (Get-VenvPython) -m app.seed 2>&1 } }
+        -Cmd { Invoke-InSrc { & (Get-VenvPython) -m app.seed 2>&1 } } `
+        -Hint {
+            param($text)
+            if ($text -match 'ユーザー2件・商品5件') { Write-Host '  → 期待どおりの件数' -ForegroundColor Magenta; return 'OK' }
+            Write-Host '  → 期待する件数（ユーザー2件・商品5件）が出ていない' -ForegroundColor Red
+            return 'NG'
+        }
 
     New-Step -Id '4-3-10' -Ch '4' -Title 'サーバー起動とSwagger UIの表示' -Kind auto `
         -Purpose '127.0.0.1がプロキシに投げられていないかを実物で確かめる' `
@@ -611,6 +647,12 @@ function Set-StepList {
                     if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force; 'サーバーを停止した' }
                 }
             }
+        } `
+        -Hint {
+            param($text)
+            if ($text -match 'docs => 200') { Write-Host '  → 200。127.0.0.1はプロキシに投げられていない' -ForegroundColor Magenta; return 'OK' }
+            Write-Host '  → 200が返っていない。3-5のループバック迂回を見直す' -ForegroundColor Red
+            return 'NG'
         }
 
     New-Step -Id '4-3-11' -Ch '4' -Title 'テストの実行（mainの基準線）' -Kind auto -TimeKey 'pytest-main' `
@@ -625,6 +667,8 @@ function Set-StepList {
                 else { Write-Host "  → $n 件PASS。基準の54件と違う" -ForegroundColor Red }
             }
             if ($text -match '(\d+)\s+failed') { Write-Host "  → 失敗 $($Matches[1]) 件。mainでは全件PASSが期待値" -ForegroundColor Red }
+            if ($text -match '(?m)(\d+)\s+passed' -and [int]$Matches[1] -eq 54 -and $text -notmatch '\d+\s+failed') { return 'OK' }
+            return 'NG'
         }
 
     New-Step -Id '4-4-01' -Ch '4' -Title 'No.2成果物の配置（講師が実施）' -Kind change `
@@ -659,6 +703,12 @@ function Set-StepList {
                 git switch No3 2>&1
                 "current = $(git branch --show-current)"
             }
+        } `
+        -Hint {
+            param($text)
+            if ($text -match 'current = No3') { Write-Host '  → No3に切り替わっている' -ForegroundColor Magenta; return 'OK' }
+            Write-Host '  → No3に切り替わっていない' -ForegroundColor Red
+            return 'NG'
         }
 
     New-Step -Id '4-4-03' -Ch '4' -Title '切り替え後のファイル確認' -Kind auto `
@@ -686,7 +736,13 @@ function Set-StepList {
         } `
         -Hint {
             param($text)
-            if ($text -notmatch 'クーポン') { Write-Host '  → クーポン件数が出ていない。No3ブランチに切り替わっているか確認する' -ForegroundColor Red }
+            if ($text -notmatch 'クーポン') {
+                Write-Host '  → クーポン件数が出ていない。No3ブランチに切り替わっているか確認する' -ForegroundColor Red
+                return 'NG'
+            }
+            if ($text -match 'ユーザー2件・商品5件・クーポン6件') { Write-Host '  → 期待どおりの件数' -ForegroundColor Magenta; return 'OK' }
+            Write-Host '  → クーポンは出ているが件数が期待と違う' -ForegroundColor Red
+            return 'NG'
         }
 
     New-Step -Id '4-4-05' -Ch '4' -Title '回帰試験の基準線' -Kind auto -TimeKey 'pytest-no3' `
@@ -700,6 +756,8 @@ function Set-StepList {
                 if ($n -eq 55) { Write-Host '  → 55件PASS。基準どおり' -ForegroundColor Magenta }
                 else { Write-Host "  → $n 件PASS。基準の55件と違う" -ForegroundColor Red }
             }
+            if ($text -match '(?m)(\d+)\s+passed' -and [int]$Matches[1] -eq 55 -and $text -notmatch '\d+\s+failed') { return 'OK' }
+            return 'NG'
         }
 
     New-Step -Id '4-5' -Ch '4' -Title 'Swagger UIでの注文確定（手動）' -Kind manual `
@@ -912,14 +970,34 @@ function Invoke-Step($Step) {
     if ($Step.TimeKey) { $script:Timings[$Step.TimeKey] = $sec }
     $text = Remove-AnsiEscape ($raw | Out-String -Width 200)
     $script:Captured[$Step.Id] = $text
+    $suggest = $null
     if ($Step.Hint) {
-        try { & $Step.Hint $text } catch { }
+        try { $suggest = & $Step.Hint $text } catch { }
     }
-    return @{ Text = $text; Seconds = $sec }
+    if ($suggest) { $suggest = ("$suggest").Trim() }
+    if ($suggest -and $suggest -notin 'OK', 'NG', '保留') { $suggest = $null }
+    return @{ Text = $text; Seconds = $sec; Suggest = $suggest }
 }
 
-function Read-Verdict($Step, [string]$Output, [double]$Seconds) {
+function Set-AutoVerdict($Step, $Result) {
+    if ($Result.Suggest) {
+        $verdict = $Result.Suggest
+        $memo = '自動判定'
+    } else {
+        $verdict = '自動'
+        $memo = '判定の根拠が無いステップ。出力を見て講師が判断する'
+    }
+    $c = switch ($verdict) { 'OK' { 'Green' } 'NG' { 'Red' } default { 'DarkGray' } }
+    Write-Host ("  {0} として記録" -f $verdict) -ForegroundColor $c
+    Add-Result $Step $verdict $Result.Text $memo $Result.Seconds
+}
+
+function Read-Verdict($Step, [string]$Output, [double]$Seconds, [string]$Suggest) {
     $memo = ''
+    if ($Suggest) {
+        $c = if ($Suggest -eq 'NG') { 'Red' } else { 'Magenta' }
+        Write-Host ("  判定の目安: {0}" -f $Suggest) -ForegroundColor $c
+    }
     while ($true) {
         $ans = Read-Key '判定  [Enter]=OK   [n]=NG   [h]=保留   [m]=メモを書く   [q]=保留にして中断'
         switch ($ans.ToLower()) {
@@ -1105,6 +1183,17 @@ Write-Host @"
 "@ -ForegroundColor Gray
 
 Write-Host ''
+if ($Auto) {
+    Write-Host '  -Auto: 確認を求めずに実行する' -ForegroundColor Yellow
+    Write-Host '    ・判定の根拠があるステップは自動で判定し、無いものは「自動」として記録する' -ForegroundColor DarkGray
+    if ($AllowChanges) {
+        Write-Host '    ・-AllowChanges により、機材の状態を変えるステップも実行する' -ForegroundColor Red
+    } else {
+        Write-Host '    ・機材の状態を変えるステップは実行しない（-AllowChanges で実行する）' -ForegroundColor DarkGray
+    }
+    Write-Host '    ・手動操作と聞き取りは「未実施」として記録し、飛ばす' -ForegroundColor DarkGray
+}
+Write-Host ''
 if ($DryRun) {
     Write-Host "  ステップ一覧の出力先 : $script:StepListPath" -ForegroundColor Green
 } else {
@@ -1158,7 +1247,9 @@ if (-not $NoTranscript) {
     }
 }
 
-$null = Read-Key '準備ができたら [Enter] で開始する（[q]=中断）'
+if (-not $Auto) {
+    $null = Read-Key '準備ができたら [Enter] で開始する（[q]=中断）'
+}
 
 $index = 0
 foreach ($step in $steps) {
@@ -1212,14 +1303,21 @@ foreach ($step in $steps) {
                 Write-Host '  この削除は自動では行わない（講師自身のPCで実行した場合に本体を消してしまうため）' -ForegroundColor DarkGray
             }
         }
-        $ans = Read-Key '[Enter]=確認した   [q]=中断'
-        if ($ans.ToLower() -eq 'q') { $script:Aborted = $true; break }
+        if (-not $Auto) {
+            $ans = Read-Key '[Enter]=確認した   [q]=中断'
+            if ($ans.ToLower() -eq 'q') { $script:Aborted = $true; break }
+        }
         Add-Result $step '確認' '' ''
         continue
     }
 
     # ---- ask ステップ
     if ($step.Kind -eq 'ask') {
+        if ($Auto) {
+            Add-Result $step '未実施' '' '自動モードのため聞き取りをしていない'
+            Write-Host '  人に尋ねる項目のため未実施として記録' -ForegroundColor DarkGray
+            continue
+        }
         $ans = Read-Key '回答を入力（[q]=中断   Enterのみ=スキップ）'
         if ($ans.ToLower() -eq 'q') { $script:Aborted = $true; break }
         if (-not $ans) {
@@ -1244,6 +1342,11 @@ foreach ($step in $steps) {
 
     # ---- manual ステップ
     if ($step.Kind -eq 'manual') {
+        if ($Auto) {
+            Add-Result $step '未実施' '' '自動モードのため手動操作をしていない'
+            Write-Host '  人が操作する項目のため未実施として記録' -ForegroundColor DarkGray
+            continue
+        }
         $ans = Read-Key '[Enter]=実施した   [s]=スキップ   [q]=中断'
         if ($ans.ToLower() -eq 'q') { $script:Aborted = $true; break }
         if ($ans.ToLower() -eq 's') {
@@ -1252,7 +1355,7 @@ foreach ($step in $steps) {
             continue
         }
         $obs = Read-Host '  観測した結果（画面に出た内容・エラー文面。無ければEnter）'
-        Read-Verdict $step $obs -1
+        Read-Verdict $step $obs -1 $null
         continue
     }
 
@@ -1260,6 +1363,21 @@ foreach ($step in $steps) {
     if ($step.Kind -eq 'change') {
         Write-Host ''
         Write-Host '  このステップは機材の状態を変える。7章で元へ戻す対象になる' -ForegroundColor Red
+        if ($Auto) {
+            if (-not $AllowChanges) {
+                Add-Result $step 'スキップ' '' '自動モードでは設定変更を実行しない（-AllowChanges で実行する）'
+                Write-Host '  スキップとして記録（実行するには -AllowChanges を付ける）' -ForegroundColor DarkGray
+                continue
+            }
+            if ($step.NeedsInput) {
+                Add-Result $step 'スキップ' '' '実行中に入力を求めるため自動モードでは実行できない'
+                Write-Host '  実行中に入力を求めるステップのためスキップ' -ForegroundColor DarkGray
+                continue
+            }
+            $r = Invoke-Step $step
+            Set-AutoVerdict $step $r
+            continue
+        }
         $ans = Read-Key '[y]=実行する   [Enter]=スキップ（既定）   [q]=中断'
         if ($ans.ToLower() -eq 'q') { $script:Aborted = $true; break }
         if ($ans.ToLower() -ne 'y') {
@@ -1268,11 +1386,16 @@ foreach ($step in $steps) {
             continue
         }
         $r = Invoke-Step $step
-        Read-Verdict $step $r.Text $r.Seconds
+        Read-Verdict $step $r.Text $r.Seconds $r.Suggest
         continue
     }
 
     # ---- auto ステップ
+    if ($Auto) {
+        $r = Invoke-Step $step
+        Set-AutoVerdict $step $r
+        continue
+    }
     $ans = Read-Key '[Enter]=実行   [s]=スキップ   [q]=中断'
     if ($ans.ToLower() -eq 'q') { $script:Aborted = $true; break }
     if ($ans.ToLower() -eq 's') {
@@ -1281,7 +1404,7 @@ foreach ($step in $steps) {
         continue
     }
     $r = Invoke-Step $step
-    Read-Verdict $step $r.Text $r.Seconds
+    Read-Verdict $step $r.Text $r.Seconds $r.Suggest
 }
 
 # ---------------------------------------------------------------- まとめ
@@ -1303,9 +1426,21 @@ if ($script:Results.Count -eq 0) {
     Write-Host ''
     $ng = @($script:Results | Where-Object Verdict -eq 'NG')
     $hold = @($script:Results | Where-Object Verdict -eq '保留')
-    Write-Host ("  OK {0} / NG {1} / 保留 {2} / その他 {3}" -f `
-        @($script:Results | Where-Object Verdict -eq 'OK').Count, $ng.Count, $hold.Count,
-        @($script:Results | Where-Object { $_.Verdict -notin 'OK', 'NG', '保留' }).Count) -ForegroundColor White
+    $notdone = @($script:Results | Where-Object Verdict -eq '未実施')
+    $autov = @($script:Results | Where-Object Verdict -eq '自動')
+    Write-Host ("  OK {0} / NG {1} / 保留 {2} / 自動 {3} / 未実施 {4} / その他 {5}" -f `
+        @($script:Results | Where-Object Verdict -eq 'OK').Count, $ng.Count, $hold.Count, $autov.Count, $notdone.Count,
+        @($script:Results | Where-Object { $_.Verdict -notin 'OK', 'NG', '保留', '自動', '未実施' }).Count) -ForegroundColor White
+    if ($autov.Count -gt 0) {
+        Write-Host ''
+        Write-Host '  自動（判定の根拠が無いステップ。記録の出力を見て講師が判断する）' -ForegroundColor DarkGray
+        $autov | ForEach-Object { Write-Host "    $($_.Id) $($_.Title)" -ForegroundColor DarkGray }
+    }
+    if ($notdone.Count -gt 0) {
+        Write-Host ''
+        Write-Host '  未実施（人が操作・確認する必要がある。改めて対話モードで実施する）' -ForegroundColor Yellow
+        $notdone | ForEach-Object { Write-Host "    $($_.Id) $($_.Title)" -ForegroundColor Yellow }
+    }
     if ($ng.Count -gt 0) {
         Write-Host ''
         Write-Host '  NG（第II部の10章で依頼先と期限を決める）' -ForegroundColor Red

@@ -16,7 +16,7 @@
     配備先は公開リポジトリで、受講者からも参照できる（普通のgit cloneでも
     リモート追跡ブランチとして付いてくる）。受講者に伏せる情報はここに書かない。
 
-    リハーサル機での取得（作業ツリーにmain / No3は展開されない）
+    リハーサル機での取得（作業ツリーに main / No3 は展開されない）
 
         git clone -b rehearsal --single-branch https://github.com/SEC-Online-Boot-Camp/EShop.git EShop-rehearsal
         cd EShop-rehearsal
@@ -59,7 +59,7 @@
                          （既定では実行しない）
         -Chapter 2,3     指定した章だけを実施する。章を指定しないときは、社内で確定させる
                          5章の挙動確認（5-2〜5-9）を除いた2〜7章を実施する。5章は
-                         -Chapter 5で明示したときだけ対象になる
+                         -Chapter 5 で明示したときだけ対象になる
         -WorkDir <path>  EShopをcloneする作業フォルダ（既定 C:\rehearsal-<日付>）
         -MaterialDir <p> docs-template があるフォルダ（4-4-01で使う。既定はこのスクリプトの場所）
         -OutDir <path>   記録の出力先（既定は作業フォルダと同じ）
@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '4e5e819d（2026-09-18 配備）'
+$script:ScriptVersion = 'f9844ee1（2026-09-18 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -336,7 +336,7 @@ function Set-StepList {
 
     New-Step -Id '2-1-c' -Ch '2' -Title 'PowerShellの実行ポリシー' -Kind auto `
         -Purpose '.venv\Scripts\activate が通るかを左右する' `
-        -Expect 'MachinePolicy / UserPolicyがUndefined以外なら、グループポリシーで縛られている' `
+        -Expect 'MachinePolicy / UserPolicy が Undefined 以外なら、グループポリシーで縛られている' `
         -Show 'Get-ExecutionPolicy -List
 （このコマンド自体が制限で動かない環境では、同じ値をレジストリから読む）' `
         -Cmd {
@@ -364,7 +364,7 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match '(?m)^\s*(MachinePolicy|UserPolicy)\s+(?!Undefined)\S+') {
-                Write-Mark '参考' 'グループポリシーで縛られている。Set-ExecutionPolicy -Scope CurrentUserは効かないため、'
+                Write-Mark '参考' 'グループポリシーで縛られている。Set-ExecutionPolicy -Scope CurrentUser は効かないため、'
                 Write-Host '        01-01手順書は代替1行だけに絞る（11章へ記録）' -ForegroundColor DarkGray
             } else {
                 Write-Mark '参考' 'ポリシーによる縛りは無い。activateの可否は 4-3 の手順8で確定する'
@@ -426,7 +426,7 @@ function Set-StepList {
             if ($text -match 'Python\s+3\.(\d+)') {
                 $minor = [int]$Matches[1]
                 if ($minor -lt 11) { Write-Mark 'NG' "3.11未満（3.$minor）。要件を満たさない"; $ng = $true }
-                else { Write-Mark 'OK' "3.$minorで要件を満たす" }
+                else { Write-Mark 'OK' "3.${minor}で要件を満たす" }
             } else { $ng = $true }
             if ($text -match 'WindowsApps') {
                 Write-Mark 'NG' 'Microsoft Storeのエイリアスを指している。実体のPythonが入っていない'
@@ -474,7 +474,7 @@ function Set-StepList {
         -Purpose 'curl・pip・Claude Codeは環境変数だけを見る。設定されているかをまず見る' `
         -Expect '有無が3スコープで記録される' `
         -Show @"
-  HTTP_PROXY / HTTPS_PROXY / NO_PROXYが設定されているかを、
+  HTTP_PROXY / HTTPS_PROXY / NO_PROXY が設定されているかを、
   User・Machine・いま動いているプロセスの3スコープで確認する。
 
   **値は表示しない**（有無だけを見る）。アドレスが必要な場合は3-2-4を参照。
@@ -501,7 +501,7 @@ function Set-StepList {
         -Purpose 'ブラウザとVS Codeが見る設定。方式によって受講者への案内が変わる' `
         -Expect '固定アドレス指定 / PAC / WPAD自動検出 / なし のいずれかを判別できる' `
         -Show @"
-  レジストリ（WinINET）とnetsh winhttpから、**方式だけ**を読む。
+  レジストリ（WinINET）と netsh winhttp から、**方式だけ**を読む。
   アドレス・PACのURL・除外リストは表示しない（3-2-4を参照）。
 "@ `
         -Cmd {
@@ -594,7 +594,7 @@ function Set-StepList {
   200 / 301 / 302 / 401 / 403 / 404        到達成功（TLSとHTTP応答が成立している）
   タイムアウト・接続拒否                   遮断（プロキシ未設定かファイアウォール）
   407 Proxy Authentication Required        認証付きプロキシ → 3-6のケースD
-  証明書エラー（SSL certificate problem）  TLS傍受 → 4-3-08のpip installで判定する
+  証明書エラー（SSL certificate problem）  TLS傍受 → 4-3-08 の pip install で判定する
   プロキシが返す502/503・ブロック画面      許可リストに無い → IT部門へ申請
 "@
 
@@ -702,7 +702,7 @@ function Set-StepList {
                 '  → 遮断か未設定。落ちたホストを10章の申請に上げる'
             }
             ''
-            'ケースE（TLS傍受）は 4-3-08 のpip installの結果で判定する'
+            'ケースE（TLS傍受）は 4-3-08 の pip install の結果で判定する'
         } `
         -Hint {
             param($text)
@@ -807,7 +807,7 @@ function Set-StepList {
             $p = Join-Path $script:SrcDir '.venv\Scripts\python.exe'
             if (Test-Path $p) { Write-Mark 'OK' '.venv\Scripts\python.exe ができている'; return 'OK' }
             Write-Mark 'NG' '仮想環境（.venv）ができていない。ここで止める'
-            Write-Host '        このまま進むと貸与機のPythonにpip installしてしまうため、4-3-08以降は実行しない' -ForegroundColor Red
+            Write-Host '        このまま進むと貸与機のPythonに pip install してしまうため、4-3-08以降は実行しない' -ForegroundColor Red
             return 'NG'
         }
 
@@ -857,7 +857,7 @@ function Set-StepList {
         -Show @"
   pip install -r requirements.txt
 
-  precheckでは --retries 1を足す。pipの既定は5回再試行するため、到達できない機材だと
+  precheckでは --retries 1 を足す。pipの既定は5回再試行するため、到達できない機材だと
   十数分無反応になる。成功する機材では所要時間は変わらないので、6章の実測にも使える。
 "@ `
         -Cmd { Invoke-InSrc { & (Get-VenvPython) -m pip install --retries 1 -r requirements.txt 2>&1 } } `
@@ -1012,7 +1012,7 @@ function Set-StepList {
             if ($text -match '(\d+)\s+passed') {
                 $n = [int]$Matches[1]
                 if ($n -eq 54) { Write-Mark 'OK' "54件PASS。基準どおり" }
-                else { Write-Mark 'NG' "$n件PASS。基準の54件と違う" }
+                else { Write-Mark 'NG' "${n}件PASS。基準の54件と違う" }
             }
             if ($text -match '(\d+)\s+failed') { Write-Mark 'NG' "失敗 $($Matches[1]) 件。mainでは全件PASSが期待値" }
             if ($text -match '(?m)(\d+)\s+passed' -and [int]$Matches[1] -eq 54 -and $text -notmatch '\d+\s+failed') { return 'OK' }
@@ -1133,7 +1133,7 @@ function Set-StepList {
             if ($text -match '(\d+)\s+passed') {
                 $n = [int]$Matches[1]
                 if ($n -eq 55) { Write-Mark 'OK' '55件PASS。基準どおり' }
-                else { Write-Mark 'NG' "$n件PASS。基準の55件と違う" }
+                else { Write-Mark 'NG' "${n}件PASS。基準の55件と違う" }
             }
             if ($text -match '(?m)(\d+)\s+passed' -and [int]$Matches[1] -eq 55 -and $text -notmatch '\d+\s+failed') { return 'OK' }
             return 'NG'
@@ -1144,14 +1144,14 @@ function Set-StepList {
     New-Step -Id '4-5' -Ch '4' -Title 'Swagger UIでの注文確定（手動）' -Kind manual `
         -Purpose 'pytestは別DBを使うため、ecommerce.db の削除漏れはここでしか表面化しない' `
         -Show @"
-  1. srcでuvicorn app.main:app --reload を起動し、http://127.0.0.1:8000/docs を開く
+  1. src で uvicorn app.main:app --reload を起動し、http://127.0.0.1:8000/docs を開く
   2. POST /auth/login を実行し、access_tokenを控える
      （ログイン情報は src/app/seed.py に定義されている。README.md には無い）
   3. 画面右上のAuthorizeにトークンを貼る
   4. POST /cart/items で商品を1件カートに追加する
   5. POST /orders を実行する
 
-  500でtable orders has no column named coupon_codeが出たら、
+  500で「table orders has no column named coupon_code」が出たら、
   4-4-04 のDB削除ができていない。DBを消してseedからやり直す。
 "@ `
         -Expect 'POST /orders が201を返す'
@@ -1322,8 +1322,8 @@ function Set-StepList {
             if ($pol -eq $script:PolicySnapshot) {
                 "実行ポリシー(CurrentUser): $pol（起動時と同じ。変えていない）"
             } else {
-                "実行ポリシー(CurrentUser): $($script:PolicySnapshot) → $polに変わっている"
-                "  → Set-ExecutionPolicy -ExecutionPolicy $($script:PolicySnapshot) -Scope CurrentUserで戻す"
+                "実行ポリシー(CurrentUser): $($script:PolicySnapshot) → ${pol}に変わっている"
+                "  → Set-ExecutionPolicy -ExecutionPolicy $($script:PolicySnapshot) -Scope CurrentUser で戻す"
             }
         }
 
@@ -1461,7 +1461,7 @@ function Read-Verdict($Step, [string]$Output, [double]$Seconds, [string]$Suggest
             Write-Host '  保留として記録し、中断する' -ForegroundColor Yellow
             return
         }
-        Write-Host '  Enter / o / n / h / m / qのいずれかを入力する' -ForegroundColor DarkGray
+        Write-Host '  Enter / o / n / h / m / q のいずれかを入力する' -ForegroundColor DarkGray
     }
 }
 
@@ -1482,18 +1482,18 @@ function Show-Timings {
     foreach ($r in $rows[0..4]) {
         $v = $script:Timings[$r.Key]
         if ($null -ne $v) { $no1 += [double]$v }
-        Write-Host ('    {0,-34} {1,8}  {2}' -f $r.Label, $(if ($null -ne $v) { "$v秒" } else { '未計測' }), $r.Ref)
+        Write-Host ('    {0,-34} {1,8}  {2}' -f $r.Label, $(if ($null -ne $v) { "${v}秒" } else { '未計測' }), $r.Ref)
     }
-    Write-Host ('    {0,-34} {1,8}' -f '小計（Claude Code導入を除く）', "$([math]::Round($no1,1)) 秒") -ForegroundColor White
+    Write-Host ('    {0,-34} {1,8}' -f '小計（Claude Code導入を除く）', "$([math]::Round($no1,1))秒") -ForegroundColor White
     Write-Host ''
     Write-Host '  6-2 No.3の導入（20分枠）' -ForegroundColor Cyan
     $no3 = 0.0
     foreach ($r in $rows[5..7]) {
         $v = $script:Timings[$r.Key]
         if ($null -ne $v) { $no3 += [double]$v }
-        Write-Host ('    {0,-34} {1,8}  {2}' -f $r.Label, $(if ($null -ne $v) { "$v秒" } else { '未計測' }), $r.Ref)
+        Write-Host ('    {0,-34} {1,8}  {2}' -f $r.Label, $(if ($null -ne $v) { "${v}秒" } else { '未計測' }), $r.Ref)
     }
-    Write-Host ('    {0,-34} {1,8}' -f '小計', "$([math]::Round($no3,1)) 秒") -ForegroundColor White
+    Write-Host ('    {0,-34} {1,8}' -f '小計', "$([math]::Round($no3,1))秒") -ForegroundColor White
     Write-Host ''
     Write-Host '  Claude Codeの導入・ログイン・VS Code拡張は手動操作のため、時計で測って記録票に書く' -ForegroundColor DarkGray
 }
@@ -1527,7 +1527,7 @@ function Save-Record {
     $null = $sb.AppendLine('## 所要時間（6章）')
     $null = $sb.AppendLine()
     foreach ($k in $script:Timings.Keys | Sort-Object) {
-        $null = $sb.AppendLine("- $k : $($script:Timings[$k]) 秒")
+        $null = $sb.AppendLine("- $k : $($script:Timings[$k])秒")
     }
     $null = $sb.AppendLine()
     $null = $sb.AppendLine('## 各ステップの出力')
@@ -1702,7 +1702,7 @@ if (-not (Test-Path $script:OutRoot)) { New-Item -ItemType Directory -Force -Pat
 Write-Head ' 事前確認書 第I部（実機確認）'
 Write-Host @"
   スクリプトの版: $script:ScriptVersion
-  対象章       : $($script:TargetChapters -join ', ')  （全 $totalステップ）
+  対象章       : $($script:TargetChapters -join ', ')  （全 ${total}ステップ）
   作業フォルダ : $script:WorkRoot
   テンプレート : $script:MaterialRoot\docs-template
   記録の出力先 : $script:OutRoot
@@ -1751,7 +1751,7 @@ if ($onDrive.Count -gt 0) {
     Write-Host '  OneDrive配下を指している。クラウドへ同期される' -ForegroundColor Red
     $onDrive | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
     Write-Host '  作業フォルダがOneDriveの下にあると .venv と .git まで同期され、6章の所要時間の' -ForegroundColor Red
-    Write-Host '  実測が当てにならなくなる。ロックがかかってpip installが落ちることもある' -ForegroundColor Red
+    Write-Host '  実測が当てにならなくなる。ロックがかかって pip install が落ちることもある' -ForegroundColor Red
     Write-Host '  記録は7-3で機材から消してもクラウド側に残る' -ForegroundColor Red
     $example = Join-Path "$env:SystemDrive\" "rehearsal-$(Get-Date -Format 'yyyyMMdd')"
     Write-Host ("    例: -WorkDir {0} -OutDir {0}" -f $example) -ForegroundColor DarkGray
@@ -1777,7 +1777,7 @@ if ($DryRun) {
     foreach ($s in $steps) { $i++; Show-Step $s $i $total }
     Write-Host ''
     Write-Rule '='
-    Write-Host " 下見おわり（$totalステップ）" -ForegroundColor Cyan
+    Write-Host " 下見おわり（${total}ステップ）" -ForegroundColor Cyan
     Write-Rule '='
     try {
         $saved = Save-StepList $steps

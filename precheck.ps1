@@ -2,7 +2,7 @@
     事前確認書 第I部（実機確認）の対話型ランナー
 
     1ステップずつ「これから実行するコマンド」を表示し、Enterで実行して結果を表示する。
-    判定（OK / NG / 保留）とメモをその場で入力し、最後に記録をファイルへ書き出す。
+    判定（OK / NG / 保留）とメモをその場で入力すると、そのつど記録ファイルへ書き足される。
 
     管理者権限は不要。機材の状態を変えるステップは <設定変更> と表示され、
     既定はスキップで、明示的に y を押したときだけ実行する。
@@ -27,6 +27,13 @@
            中身を文字列として読み込んで実行するこの形は管理者権限なしで通る。
            引数を渡す場合は末尾に足す:
            & ([scriptblock]::Create((Get-Content .\precheck.ps1 -Raw))) -DryRun
+
+    出力されるファイル（既定はデスクトップ。-OutDir で変えられる）
+
+        precheck-result-<日時>.md   判定・所要時間・各ステップの出力とメモ
+                                    1ステップごとに書き足すので、中断しても残る
+        precheck-steps-<日時>.md    -DryRun で出るステップ一覧
+        rehearsal-check.txt         Start-Transcript の記録（画面に出たものすべて）
 
     引数
 
@@ -70,6 +77,13 @@ function Write-Label([string]$label, [string]$value, [string]$color = 'Gray') {
         Write-Host $line -ForegroundColor $color
         $label = ''
     }
+}
+
+function Remove-AnsiEscape([string]$Text) {
+    # pytest などが色付けに使う制御シーケンスを外す。残すとmdが読めなくなる
+    if (-not $Text) { return $Text }
+    $esc = [char]27
+    return ($Text -replace "$esc\[[0-9;?]*[ -/]*[@-~]", '' -replace "$esc\][^$esc]*($([char]7)|$esc\\)", '')
 }
 
 function Read-Key([string]$prompt) {
@@ -118,6 +132,9 @@ function Add-Result {
         Verdict = $Verdict; Output = $Output; Memo = $Memo
         Seconds = $Seconds; At = (Get-Date).ToString('HH:mm:ss')
     }
+    # 1ステップごとに書き出す。中断しても、そこまでの結果はファイルに残る
+    try { Save-Record | Out-Null }
+    catch { Write-Host "  記録の書き出しに失敗した（続行する）: $($_.Exception.Message)" -ForegroundColor Yellow }
 }
 
 function Get-ShowText($Step) {
@@ -847,14 +864,19 @@ function Set-StepList {
 
 # ---------------------------------------------------------------- 実行
 
-function Show-Step($Step, [int]$Index, [int]$Total) {
-    $kindLabel = switch ($Step.Kind) {
-        'auto'   { '<読み取り / 実行>' }
-        'change' { '<設定変更>' }
-        'manual' { '<手動操作>' }
-        'ask'    { '<聞き取り>' }
-        'info'   { '<確認のみ>' }
+function Get-KindLabel([string]$Kind) {
+    switch ($Kind) {
+        'auto'   { '読み取り / 実行' }
+        'change' { '設定変更' }
+        'manual' { '手動操作' }
+        'ask'    { '聞き取り' }
+        'info'   { '確認のみ' }
+        default  { $Kind }
     }
+}
+
+function Show-Step($Step, [int]$Index, [int]$Total) {
+    $kindLabel = '<' + (Get-KindLabel $Step.Kind) + '>'
     $color = if ($Step.Kind -eq 'change') { 'Red' } else { 'Cyan' }
     Write-Host ''
     Write-Rule '='
@@ -888,7 +910,7 @@ function Invoke-Step($Step) {
     $sec = [math]::Round($sw.Elapsed.TotalSeconds, 1)
     Write-Host ("  所要 {0} 秒" -f $sec) -ForegroundColor DarkGray
     if ($Step.TimeKey) { $script:Timings[$Step.TimeKey] = $sec }
-    $text = ($raw | Out-String -Width 200)
+    $text = Remove-AnsiEscape ($raw | Out-String -Width 200)
     $script:Captured[$Step.Id] = $text
     if ($Step.Hint) {
         try { & $Step.Hint $text } catch { }
@@ -950,8 +972,7 @@ function Show-Timings {
 }
 
 function Save-Record {
-    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $path = Join-Path $script:OutRoot "precheck-result-$stamp.md"
+    $path = $script:RecordPath
     $sb = New-Object System.Text.StringBuilder
     $null = $sb.AppendLine("# 事前確認書 第I部 実施記録")
     $null = $sb.AppendLine()
@@ -959,15 +980,17 @@ function Save-Record {
     $null = $sb.AppendLine("- 機材: $env:COMPUTERNAME")
     $null = $sb.AppendLine("- 実施者: $env:USERNAME")
     $null = $sb.AppendLine("- 作業フォルダ: $script:WorkRoot")
+    $null = $sb.AppendLine("- 対象章: $($script:TargetChapters -join ', ')")
+    $null = $sb.AppendLine("- 記録した時点: $(Get-Date -Format 'HH:mm:ss')（1ステップごとに更新される）")
     $null = $sb.AppendLine()
     $null = $sb.AppendLine('## 判定一覧')
     $null = $sb.AppendLine()
-    $null = $sb.AppendLine('| 章 | 項目 | 判定 | 所要 | メモ |')
-    $null = $sb.AppendLine('| :-- | :-- | :-- | --: | :-- |')
+    $null = $sb.AppendLine('| 章 | 項目 | 種別 | 判定 | 所要 | メモ |')
+    $null = $sb.AppendLine('| :-- | :-- | :-- | :-- | --: | :-- |')
     foreach ($r in $script:Results) {
         $secText = if ($r.Seconds -ge 0) { "$($r.Seconds)秒" } else { '' }
         $memo = ($r.Memo -replace '\|', '\|') -replace "`r?`n", ' '
-        $null = $sb.AppendLine("| $($r.Ch) | $($r.Id) $($r.Title) | $($r.Verdict) | $secText | $memo |")
+        $null = $sb.AppendLine("| $($r.Ch) | $($r.Id) $($r.Title) | $(Get-KindLabel $r.Kind) | $($r.Verdict) | $secText | $memo |")
     }
     $null = $sb.AppendLine()
     $null = $sb.AppendLine('## 所要時間（6章）')
@@ -1001,6 +1024,45 @@ function Save-Record {
     return $path
 }
 
+function Save-StepList {
+    param($Steps)
+    $path = $script:StepListPath
+    $sb = New-Object System.Text.StringBuilder
+    $null = $sb.AppendLine('# 事前確認書 第I部 ステップ一覧（下見）')
+    $null = $sb.AppendLine()
+    $null = $sb.AppendLine("- 出力日時: $(Get-Date -Format 'yyyy-MM-dd HH:mm')")
+    $null = $sb.AppendLine("- 対象章: $($script:TargetChapters -join ', ')")
+    $null = $sb.AppendLine("- 全 $(@($Steps).Count) ステップ")
+    $null = $sb.AppendLine()
+    $null = $sb.AppendLine('| # | 章 | ID | 確認項目 | 種別 |')
+    $null = $sb.AppendLine('| --: | :-- | :-- | :-- | :-- |')
+    $i = 0
+    foreach ($st in $Steps) {
+        $i++
+        $null = $sb.AppendLine("| $i | $($st.Ch) | $($st.Id) | $($st.Title) | $(Get-KindLabel $st.Kind) |")
+    }
+    $i = 0
+    foreach ($st in $Steps) {
+        $i++
+        $null = $sb.AppendLine()
+        $null = $sb.AppendLine("## $i. $($st.Id) $($st.Title)")
+        $null = $sb.AppendLine()
+        $null = $sb.AppendLine("- 章: $($st.Ch)　種別: $(Get-KindLabel $st.Kind)")
+        if ($st.Purpose) { $null = $sb.AppendLine("- 目的: $($st.Purpose)") }
+        if ($st.Expect) { $null = $sb.AppendLine("- 期待: $($st.Expect)") }
+        if ($st.Ask) { $null = $sb.AppendLine("- 聞く: $($st.Ask)") }
+        $show = Get-ShowText $st
+        if ($show) {
+            $null = $sb.AppendLine()
+            $null = $sb.AppendLine('```text')
+            $null = $sb.AppendLine($show.TrimEnd())
+            $null = $sb.AppendLine('```')
+        }
+    }
+    [System.IO.File]::WriteAllText($path, $sb.ToString(), (New-Object System.Text.UTF8Encoding $true))
+    return $path
+}
+
 # ---------------------------------------------------------------- 起点
 
 if ($PSVersionTable.PSVersion.Major -lt 5) {
@@ -1019,13 +1081,19 @@ $script:ChangedEnv = $false
 Set-StepList
 
 $targetChapters = if ($Chapter) { $Chapter | ForEach-Object { "$_" } } else { @('2', '3', '4', '5', '6', '7') }
+$script:TargetChapters = $targetChapters
 $steps = $script:Steps | Where-Object { $targetChapters -contains $_.Ch }
 $total = @($steps).Count
+
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$script:RecordPath = Join-Path $script:OutRoot "precheck-result-$stamp.md"
+$script:StepListPath = Join-Path $script:OutRoot "precheck-steps-$stamp.md"
+if (-not (Test-Path $script:OutRoot)) { New-Item -ItemType Directory -Force -Path $script:OutRoot | Out-Null }
 
 Write-Head ' 事前確認書 第I部（実機確認）'
 Write-Host @"
   1ステップずつコマンドを表示し、Enterで実行して結果を表示する。
-  判定とメモをその場で入力し、最後に記録をファイルへ書き出す。
+  判定とメモをその場で入力すると、そのつど記録ファイルへ書き足される。
 
   管理者権限は不要。<設定変更> と表示されるステップだけが機材の状態を変え、
   既定はスキップ、y を押したときだけ実行する（すべて7章で元へ戻す）。
@@ -1035,6 +1103,14 @@ Write-Host @"
   テンプレート : $script:MaterialRoot\docs-template
   記録の出力先 : $script:OutRoot
 "@ -ForegroundColor Gray
+
+Write-Host ''
+if ($DryRun) {
+    Write-Host "  ステップ一覧の出力先 : $script:StepListPath" -ForegroundColor Green
+} else {
+    Write-Host "  判定と出力の記録     : $script:RecordPath" -ForegroundColor Green
+    Write-Host '  （1ステップごとに書き足すので、途中で中断しても残る）' -ForegroundColor DarkGray
+}
 
 try {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -1058,6 +1134,15 @@ if ($DryRun) {
     Write-Rule '='
     Write-Host " 下見おわり（$total ステップ）" -ForegroundColor Cyan
     Write-Rule '='
+    try {
+        $saved = Save-StepList $steps
+        Write-Host ''
+        Write-Host "  ステップ一覧を書き出した: $saved" -ForegroundColor Green
+    } catch {
+        Write-Host ''
+        Write-Host "  ステップ一覧の書き出しに失敗した: $($_.Exception.Message)" -ForegroundColor Red
+    }
+    Write-Host ''
     return
 }
 
@@ -1243,7 +1328,7 @@ if ($script:ChangedEnv) {
 try {
     $saved = Save-Record
     Write-Host ''
-    Write-Host "  記録を書き出した: $saved" -ForegroundColor Green
+    Write-Host "  記録: $saved" -ForegroundColor Green
 } catch {
     Write-Host ''
     Write-Host "  記録の書き出しに失敗した: $($_.Exception.Message)" -ForegroundColor Red

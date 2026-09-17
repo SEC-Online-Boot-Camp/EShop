@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '6045eea7（2026-09-17 配備）'
+$script:ScriptVersion = '70bbf286（2026-09-17 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -113,6 +113,14 @@ function Write-Label([string]$label, [string]$value, [string]$color = 'Gray') {
         Write-Host $line -ForegroundColor $color
         $label = ''
     }
+}
+
+function Write-Mark([string]$Mark, [string]$Text) {
+    # 判定を行頭に出す。色が落ちる記録（rehearsal-check.txt）でも、読み飛ばしてよい行と
+    # ここで止まる行が見分けられるようにするため。幅を揃えて後続の説明行とぶら下げを合わせる。
+    $label = switch ($Mark) { 'OK' { 'OK  ' } 'NG' { 'NG  ' } default { $Mark } }
+    $color = switch ($Mark) { 'OK' { 'Magenta' } 'NG' { 'Red' } '保留' { 'Yellow' } default { 'DarkGray' } }
+    Write-Host ('  {0}  {1}' -f $label, $Text) -ForegroundColor $color
 }
 
 function Remove-AnsiEscape([string]$Text) {
@@ -352,10 +360,10 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match '(?m)^\s*(MachinePolicy|UserPolicy)\s+(?!Undefined)\S+') {
-                Write-Host '  → グループポリシーで縛られている。Set-ExecutionPolicy -Scope CurrentUser は効かないため、' -ForegroundColor Magenta
-                Write-Host '     01-01手順書は代替1行だけに絞る（11章へ記録）' -ForegroundColor Magenta
+                Write-Mark '参考' 'グループポリシーで縛られている。Set-ExecutionPolicy -Scope CurrentUser は効かないため、'
+                Write-Host '        01-01手順書は代替1行だけに絞る（11章へ記録）' -ForegroundColor DarkGray
             } else {
-                Write-Host '  → ポリシーによる縛りは無い。activate の可否は 4-3 の手順8で確定する' -ForegroundColor Magenta
+                Write-Mark '参考' 'ポリシーによる縛りは無い。activate の可否は 4-3 の手順8で確定する'
             }
         }
 
@@ -372,8 +380,8 @@ function Set-StepList {
             param($text)
             if ($text -match 'Free\(GB\)[\s\S]*?([\d\.]+)\s*$') {
                 $free = [double]$Matches[1]
-                if ($free -lt 2) { Write-Host "  → 空きが2GBを下回っている（$free GB）" -ForegroundColor Red; return 'NG' }
-                else { Write-Host "  → 空きは足りている（$free GB）" -ForegroundColor Magenta; return 'OK' }
+                if ($free -lt 2) { Write-Mark 'NG' "空きが2GBを下回っている（$free GB）"; return 'NG' }
+                else { Write-Mark 'OK' "空きは足りている（$free GB）"; return 'OK' }
             }
         }
 
@@ -391,13 +399,13 @@ function Set-StepList {
         } `
         -Hint {
             param($text)
-            if ($text -match '(?m)^\s*\d+\.\d+') { Write-Host '  → 版を取得できた' -ForegroundColor Magenta; return 'OK' }
+            if ($text -match '(?m)^\s*\d+\.\d+') { Write-Mark 'OK' '版を取得できた'; return 'OK' }
             if ($text -match '実体あり:') {
-                Write-Host '  → 導入されているが code がPATHに無い。受講者にも同じ現象が出る' -ForegroundColor Yellow
-                Write-Host '     講座では code コマンドを使わないため実害は無いが、手順書の補足に載せる' -ForegroundColor Yellow
+                Write-Mark '保留' '導入されているが code がPATHに無い。受講者にも同じ現象が出る'
+                Write-Host '        講座では code コマンドを使わないため実害は無いが、手順書の補足に載せる' -ForegroundColor Yellow
                 return '保留'
             }
-            Write-Host '  → VS Codeが見つからない' -ForegroundColor Red
+            Write-Mark 'NG' 'VS Codeが見つからない'
             return 'NG'
         }
 
@@ -413,11 +421,11 @@ function Set-StepList {
             $ng = $false
             if ($text -match 'Python\s+3\.(\d+)') {
                 $minor = [int]$Matches[1]
-                if ($minor -lt 11) { Write-Host "  → 3.11未満（3.$minor）。要件を満たさない" -ForegroundColor Red; $ng = $true }
-                else { Write-Host "  → 3.$minor で要件を満たす" -ForegroundColor Magenta }
+                if ($minor -lt 11) { Write-Mark 'NG' "3.11未満（3.$minor）。要件を満たさない"; $ng = $true }
+                else { Write-Mark 'OK' "3.$minor で要件を満たす" }
             } else { $ng = $true }
             if ($text -match 'WindowsApps') {
-                Write-Host '  → Microsoft Storeのエイリアスを指している。実体のPythonが入っていない' -ForegroundColor Red
+                Write-Mark 'NG' 'Microsoft Storeのエイリアスを指している。実体のPythonが入っていない'
                 $ng = $true
             }
             if ($ng) { return 'NG' } else { return 'OK' }
@@ -429,8 +437,8 @@ function Set-StepList {
         -Cmd { git --version } `
         -Hint {
             param($text)
-            if ($text -match 'git version') { Write-Host '  → 導入されている' -ForegroundColor Magenta; return 'OK' }
-            Write-Host '  → git が見つからない。4章は実施できない' -ForegroundColor Red
+            if ($text -match 'git version') { Write-Mark 'OK' '導入されている'; return 'OK' }
+            Write-Mark 'NG' 'git が見つからない。4章は実施できない'
             return 'NG'
         }
 
@@ -451,8 +459,8 @@ function Set-StepList {
         } `
         -Hint {
             param($text)
-            if ($text -match 'EXCEL\.EXE') { Write-Host '  → Excelが導入されている' -ForegroundColor Magenta; return 'OK' }
-            Write-Host '  → Excelが見つからない。1章の演習（xlsxの編集）ができない' -ForegroundColor Red
+            if ($text -match 'EXCEL\.EXE') { Write-Mark 'OK' 'Excelが導入されている'; return 'OK' }
+            Write-Mark 'NG' 'Excelが見つからない。1章の演習（xlsxの編集）ができない'
             return 'NG'
         }
 
@@ -479,9 +487,9 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match 'プロセス=設定あり') {
-                Write-Host '  → 設定されている。curl・pip・git はプロキシを使う状態' -ForegroundColor Magenta
+                Write-Mark '参考' '設定されている。curl・pip・git はプロキシを使う状態'
             } else {
-                Write-Host '  → 設定されていない。3-4-1が通らなければ、手順書に設定を載せる（11章）' -ForegroundColor Magenta
+                Write-Mark '参考' '設定されていない。3-4-1が通らなければ、手順書に設定を載せる（11章）'
             }
         }
 
@@ -514,8 +522,8 @@ function Set-StepList {
         } `
         -Hint {
             param($text)
-            if ($text -match 'PAC') { Write-Host '  → PAC方式。宛先ごとの振り分けは3-2-3で見る' -ForegroundColor Magenta }
-            if ($text -match 'ローカル除外\(<local>\)の指定: あり') { Write-Host '  → ローカルアドレスは迂回される（Swagger UIの表示に必要）' -ForegroundColor Magenta }
+            if ($text -match 'PAC') { Write-Mark '参考' 'PAC方式。宛先ごとの振り分けは3-2-3で見る' }
+            if ($text -match 'ローカル除外\(<local>\)の指定: あり') { Write-Mark '参考' 'ローカルアドレスは迂回される（Swagger UIの表示に必要）' }
         }
 
     New-Step -Id '3-2-3' -Ch '3' -Title '宛先ごとの経路（プロキシ経由か直結か）' -Kind auto `
@@ -540,11 +548,11 @@ function Set-StepList {
             param($text)
             foreach ($line in ($text -split "`n")) {
                 if ($line -match '127\.0\.0\.1' -and $line -match 'プロキシ経由') {
-                    Write-Host '  → 127.0.0.1がプロキシに投げられる。Swagger UIの確認で詰まる（3-5-b参照）' -ForegroundColor Red
+                    Write-Mark 'NG' '127.0.0.1がプロキシに投げられる。Swagger UIの確認で詰まる（3-5-b参照）'
                     return 'NG'
                 }
             }
-            Write-Host '  → 127.0.0.1は直結。宛先ごとの振り分けを記録した' -ForegroundColor Magenta
+            Write-Mark 'OK' '127.0.0.1は直結。宛先ごとの振り分けを記録した'
             return 'OK'
         }
 
@@ -596,12 +604,12 @@ function Set-StepList {
         -Hint {
             param($text)
             $r = Get-Reachability $text
-            if ($r.Auth) { Write-Host '  → 407（認証付きプロキシ）。IT部門へ申請（10章）' -ForegroundColor Red; return 'NG' }
+            if ($r.Auth) { Write-Mark 'NG' '407（認証付きプロキシ）。IT部門へ申請（10章）'; return 'NG' }
             if ($r.Bad -gt 0) {
-                Write-Host "  → 到達できていないホストが $($r.Bad) 件ある（10章の申請対象）" -ForegroundColor Red
+                Write-Mark 'NG' "到達できていないホストが $($r.Bad) 件ある（10章の申請対象）"
                 return 'NG'
             }
-            Write-Host "  → $($r.OK) ホストすべてTLSまで到達している" -ForegroundColor Magenta
+            Write-Mark 'OK' "$($r.OK) ホストすべてTLSまで到達している"
             return 'OK'
         }
 
@@ -616,14 +624,14 @@ function Set-StepList {
         } `
         -Hint {
             param($text)
-            Write-Host '  → 403や404は「到達成功」。文面で返ってきても落ちとは数えない（3-3）' -ForegroundColor DarkGray
+            Write-Mark '参考' '403や404は「到達成功」。文面で返ってきても落ちとは数えない（3-3）'
             $r = Get-Reachability $text
-            if ($r.Auth) { Write-Host '  → 407（認証付きプロキシ）。IT部門へ申請（10章）' -ForegroundColor Red; return 'NG' }
+            if ($r.Auth) { Write-Mark 'NG' '407（認証付きプロキシ）。IT部門へ申請（10章）'; return 'NG' }
             if ($r.Bad -gt 0) {
-                Write-Host "  → 到達できていないホストが $($r.Bad) 件ある。3-4-1との食い違いは3-6-aで判定する" -ForegroundColor Red
+                Write-Mark 'NG' "到達できていないホストが $($r.Bad) 件ある。3-4-1との食い違いは3-6-aで判定する"
                 return 'NG'
             }
-            Write-Host "  → $($r.OK) ホストすべてTLSまで到達している" -ForegroundColor Magenta
+            Write-Mark 'OK' "$($r.OK) ホストすべてTLSまで到達している"
             return 'OK'
         }
 
@@ -649,10 +657,10 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match 'False') {
-                Write-Host '  → 迂回されない。環境変数を設定する場合は NO_PROXY に localhost,127.0.0.1,::1 を必ず入れる' -ForegroundColor Red
+                Write-Mark 'NG' '迂回されない。環境変数を設定する場合は NO_PROXY に localhost,127.0.0.1,::1 を必ず入れる'
                 return 'NG'
             } else {
-                Write-Host '  → 迂回される。Swagger UI の表示は問題ない' -ForegroundColor Magenta
+                Write-Mark 'OK' '迂回される。Swagger UI の表示は問題ない'
                 return 'OK'
             }
         }
@@ -732,9 +740,9 @@ function Set-StepList {
         -Cmd { claude --version } `
         -Hint {
             param($text)
-            if ($text -match '(?m)^\s*\d+\.\d+') { Write-Host '  → 版を取得できた' -ForegroundColor Magenta; return 'OK' }
-            Write-Host '  → claude を解決できない。導入に失敗したか、PATHが通っていない' -ForegroundColor Red
-            Write-Host '     4-3-01 をスキップしたならここもNGでよい。実行したなら新しいターミナルで試す' -ForegroundColor Red
+            if ($text -match '(?m)^\s*\d+\.\d+') { Write-Mark 'OK' '版を取得できた'; return 'OK' }
+            Write-Mark 'NG' 'claude を解決できない。導入に失敗したか、PATHが通っていない'
+            Write-Host '        4-3-01 をスキップしたならここもNGでよい。実行したなら新しいターミナルで試す' -ForegroundColor Red
             return 'NG'
         }
 
@@ -779,10 +787,10 @@ function Set-StepList {
         -Hint {
             param($text)
             if (Test-Path (Join-Path $script:RepoDir 'src')) {
-                Write-Host '  → cloneできている（src が見える）' -ForegroundColor Magenta
+                Write-Mark 'OK' 'cloneできている（src が見える）'
                 return 'OK'
             }
-            Write-Host '  → cloneできていない。github.com への到達を3-4で確認する' -ForegroundColor Red
+            Write-Mark 'NG' 'cloneできていない。github.com への到達を3-4で確認する'
             return 'NG'
         }
 
@@ -793,9 +801,9 @@ function Set-StepList {
         -Hint {
             param($text)
             $p = Join-Path $script:SrcDir '.venv\Scripts\python.exe'
-            if (Test-Path $p) { Write-Host '  → .venv\Scripts\python.exe ができている' -ForegroundColor Magenta; return 'OK' }
-            Write-Host '  → .venv ができていない。ここで止める' -ForegroundColor Red
-            Write-Host '     このまま進むと貸与機のPythonに pip install してしまうため、4-3-08以降は実行しない' -ForegroundColor Red
+            if (Test-Path $p) { Write-Mark 'OK' '.venv\Scripts\python.exe ができている'; return 'OK' }
+            Write-Mark 'NG' '.venv ができていない。ここで止める'
+            Write-Host '        このまま進むと貸与機のPythonに pip install してしまうため、4-3-08以降は実行しない' -ForegroundColor Red
             return 'NG'
         }
 
@@ -830,10 +838,10 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match 'activate（\.ps1）は失敗した') {
-                Write-Host '  → 手順書は代替1行だけに絞る（11章へ記録）' -ForegroundColor Magenta
+                Write-Mark '参考' '手順書は代替1行だけに絞る（11章へ記録）'
             }
             if ($text -notmatch '\.venv') {
-                Write-Host '  → python/pytest が .venv 配下を指していない。ここが揃わないと以降が別環境になる' -ForegroundColor Red
+                Write-Mark 'NG' 'python/pytest が .venv 配下を指していない。ここが揃わないと以降が別環境になる'
                 return 'NG'
             }
             return 'OK'
@@ -852,17 +860,17 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match '仮想環境が無い') {
-                Write-Host '  → 仮想環境が無いため実行していない。4-3-06 を先に通す' -ForegroundColor Red
+                Write-Mark 'NG' '仮想環境が無いため実行していない。4-3-06 を先に通す'
                 return 'NG'
             }
             if ($text -match 'CERTIFICATE_VERIFY_FAILED|SSLError') {
-                Write-Host '  → TLS傍受あり（ケースE）。pipだけが証明書で落ちるのが典型' -ForegroundColor Red
-                Write-Host '     付録Cの対処へ。検証の無効化は使わない。証明書の名称はIT部門に確認（10章）' -ForegroundColor Red
+                Write-Mark 'NG' 'TLS傍受あり（ケースE）。pipだけが証明書で落ちるのが典型'
+                Write-Host '        付録Cの対処へ。検証の無効化は使わない。証明書の名称はIT部門に確認（10章）' -ForegroundColor Red
             } elseif ($text -match 'Successfully installed|Requirement already satisfied') {
-                Write-Host '  → 証明書エラーは出ていない。TLS傍受はなし（またはCAが配布済み）と判定できる' -ForegroundColor Magenta
+                Write-Mark 'OK' '証明書エラーは出ていない。TLS傍受はなし（またはCAが配布済み）と判定できる'
             }
             if ($text -match 'Failed building wheel|error: subprocess-exited-with-error') {
-                Write-Host '  → wheelが無くソースビルドに落ちている。Pythonの版を合わせる判断が必要（4-2）' -ForegroundColor Red
+                Write-Mark 'NG' 'wheelが無くソースビルドに落ちている。Pythonの版を合わせる判断が必要（4-2）'
             }
             if ($text -match '(?m)^\s*ERROR:' -or $text -match 'CERTIFICATE_VERIFY_FAILED|SSLError|Failed building wheel') { return 'NG' }
             if ($text -match 'Successfully installed|Requirement already satisfied') { return 'OK' }
@@ -876,16 +884,16 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match '仮想環境が無い') {
-                Write-Host '  → 仮想環境が無いため実行していない。4-3-06 を先に通す' -ForegroundColor Red
+                Write-Mark 'NG' '仮想環境が無いため実行していない。4-3-06 を先に通す'
                 return 'NG'
             }
-            if ($text -match 'ユーザー2件・商品5件') { Write-Host '  → 期待どおりの件数' -ForegroundColor Magenta; return 'OK' }
+            if ($text -match 'ユーザー2件・商品5件') { Write-Mark 'OK' '期待どおりの件数'; return 'OK' }
             if ($text -match 'すでにデータが投入されています') {
-                Write-Host '  → DBが残っているため投入をスキップした。件数を確認できていない' -ForegroundColor Yellow
-                Write-Host '     やり直す場合は src の ecommerce.db を消してから再実行する' -ForegroundColor Yellow
+                Write-Mark '保留' 'DBが残っているため投入をスキップした。件数を確認できていない'
+                Write-Host '        やり直す場合は src の ecommerce.db を消してから再実行する' -ForegroundColor Yellow
                 return '保留'
             }
-            Write-Host '  → 期待する件数（ユーザー2件・商品5件）が出ていない' -ForegroundColor Red
+            Write-Mark 'NG' '期待する件数（ユーザー2件・商品5件）が出ていない'
             return 'NG'
         }
 
@@ -967,23 +975,23 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match '仮想環境が無い') {
-                Write-Host '  → 仮想環境が無いため実行していない。4-3-06 を先に通す' -ForegroundColor Red
+                Write-Mark 'NG' '仮想環境が無いため実行していない。4-3-06 を先に通す'
                 return 'NG'
             }
             if ($text -match '8000番が既に使われている') {
-                Write-Host '  → 判定できない。8000番を空けてからやり直す' -ForegroundColor Yellow
+                Write-Mark '保留' '判定できない。8000番を空けてからやり直す'
                 return '保留'
             }
             if ($text -match 'docs => 200') {
                 if ($text -match 'プロキシに投げられている可能性') {
-                    Write-Host '  → サーバーは起動した。ただしループバックがプロキシに向いている' -ForegroundColor Yellow
-                    Write-Host '     ブラウザ側の判定は 3-5-b を見る。受講者への案内が要るかはそこで決める' -ForegroundColor Yellow
+                    Write-Mark '保留' 'サーバーは起動した。ただしループバックがプロキシに向いている'
+                    Write-Host '        ブラウザ側の判定は 3-5-b を見る。受講者への案内が要るかはそこで決める' -ForegroundColor Yellow
                     return '保留'
                 }
-                Write-Host '  → サーバーが起動して応答を返した。ループバックの迂回も問題ない' -ForegroundColor Magenta
+                Write-Mark 'OK' 'サーバーが起動して応答を返した。ループバックの迂回も問題ない'
                 return 'OK'
             }
-            Write-Host '  → 200が返っていない。上の起動時の出力を見る' -ForegroundColor Red
+            Write-Mark 'NG' '200が返っていない。上の起動時の出力を見る'
             return 'NG'
         }
 
@@ -994,15 +1002,15 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match '仮想環境が無い') {
-                Write-Host '  → 仮想環境が無いため実行していない。4-3-06 を先に通す' -ForegroundColor Red
+                Write-Mark 'NG' '仮想環境が無いため実行していない。4-3-06 を先に通す'
                 return 'NG'
             }
             if ($text -match '(\d+)\s+passed') {
                 $n = [int]$Matches[1]
-                if ($n -eq 54) { Write-Host "  → 54件PASS。基準どおり" -ForegroundColor Magenta }
-                else { Write-Host "  → $n 件PASS。基準の54件と違う" -ForegroundColor Red }
+                if ($n -eq 54) { Write-Mark 'OK' "54件PASS。基準どおり" }
+                else { Write-Mark 'NG' "$n 件PASS。基準の54件と違う" }
             }
-            if ($text -match '(\d+)\s+failed') { Write-Host "  → 失敗 $($Matches[1]) 件。mainでは全件PASSが期待値" -ForegroundColor Red }
+            if ($text -match '(\d+)\s+failed') { Write-Mark 'NG' "失敗 $($Matches[1]) 件。mainでは全件PASSが期待値" }
             if ($text -match '(?m)(\d+)\s+passed' -and [int]$Matches[1] -eq 54 -and $text -notmatch '\d+\s+failed') { return 'OK' }
             return 'NG'
         }
@@ -1043,8 +1051,8 @@ function Set-StepList {
         } `
         -Hint {
             param($text)
-            if ($text -match 'current = No3') { Write-Host '  → No3に切り替わっている' -ForegroundColor Magenta; return 'OK' }
-            Write-Host '  → No3に切り替わっていない' -ForegroundColor Red
+            if ($text -match 'current = No3') { Write-Mark 'OK' 'No3に切り替わっている'; return 'OK' }
+            Write-Mark 'NG' 'No3に切り替わっていない'
             return 'NG'
         }
 
@@ -1066,21 +1074,21 @@ function Set-StepList {
             $hasCoupon = $text -match 'coupon\.py'
             $hasDocs = $text -match '要件整理メモ|クーポンAPI設計書'
             if (-not $hasCoupon) {
-                Write-Host '  → app\coupon.py が無い。No3への切り替え（4-4-02）を確認する' -ForegroundColor Red
+                Write-Mark 'NG' 'app\coupon.py が無い。No3への切り替え（4-4-02）を確認する'
                 return 'NG'
             }
             if ($hasDocs) {
-                Write-Host '  → 両方ある。実行場所が別であることを手順書に反映する（11章）' -ForegroundColor Magenta
+                Write-Mark 'OK' '両方ある。実行場所が別であることを手順書に反映する（11章）'
                 return 'OK'
             }
             # 4-4-01 を実施していなければ docs は無いのが当然なので、NGではなく保留にする
             $placed = $script:Results | Where-Object { $_.Id -eq '4-4-01' -and $_.Verdict -eq 'OK' }
             if ($placed) {
-                Write-Host '  → 4-4-01は実施済みなのに docs の成果物が無い。配置先を確認する' -ForegroundColor Red
+                Write-Mark 'NG' '4-4-01は実施済みなのに docs の成果物が無い。配置先を確認する'
                 return 'NG'
             }
-            Write-Host '  → docs が無い。4-4-01（成果物の配置）を実施していないため判定できない' -ForegroundColor Yellow
-            Write-Host '     coupon.py は見つかっているので、切り替え自体は成功している' -ForegroundColor Yellow
+            Write-Mark '保留' 'docs が無い。4-4-01（成果物の配置）を実施していないため判定できない'
+            Write-Host '        coupon.py は見つかっているので、切り替え自体は成功している' -ForegroundColor Yellow
             return '保留'
         }
 
@@ -1096,15 +1104,15 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match '仮想環境が無い') {
-                Write-Host '  → 仮想環境が無いため実行していない。4-3-06 を先に通す' -ForegroundColor Red
+                Write-Mark 'NG' '仮想環境が無いため実行していない。4-3-06 を先に通す'
                 return 'NG'
             }
             if ($text -notmatch 'クーポン') {
-                Write-Host '  → クーポン件数が出ていない。No3ブランチに切り替わっているか確認する' -ForegroundColor Red
+                Write-Mark 'NG' 'クーポン件数が出ていない。No3ブランチに切り替わっているか確認する'
                 return 'NG'
             }
-            if ($text -match 'ユーザー2件・商品5件・クーポン6件') { Write-Host '  → 期待どおりの件数' -ForegroundColor Magenta; return 'OK' }
-            Write-Host '  → クーポンは出ているが件数が期待と違う' -ForegroundColor Red
+            if ($text -match 'ユーザー2件・商品5件・クーポン6件') { Write-Mark 'OK' '期待どおりの件数'; return 'OK' }
+            Write-Mark 'NG' 'クーポンは出ているが件数が期待と違う'
             return 'NG'
         }
 
@@ -1115,13 +1123,13 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match '仮想環境が無い') {
-                Write-Host '  → 仮想環境が無いため実行していない。4-3-06 を先に通す' -ForegroundColor Red
+                Write-Mark 'NG' '仮想環境が無いため実行していない。4-3-06 を先に通す'
                 return 'NG'
             }
             if ($text -match '(\d+)\s+passed') {
                 $n = [int]$Matches[1]
-                if ($n -eq 55) { Write-Host '  → 55件PASS。基準どおり' -ForegroundColor Magenta }
-                else { Write-Host "  → $n 件PASS。基準の55件と違う" -ForegroundColor Red }
+                if ($n -eq 55) { Write-Mark 'OK' '55件PASS。基準どおり' }
+                else { Write-Mark 'NG' "$n 件PASS。基準の55件と違う" }
             }
             if ($text -match '(?m)(\d+)\s+passed' -and [int]$Matches[1] -eq 55 -and $text -notmatch '\d+\s+failed') { return 'OK' }
             return 'NG'
@@ -1249,17 +1257,17 @@ function Set-StepList {
         } `
         -Hint {
             param($text)
-            Write-Host '  → リハーサル機からは絶対にpushしない。差分は破棄するか、クローンごと削除する（7-3-a）' -ForegroundColor Magenta
+            Write-Mark '参考' 'リハーサル機からは絶対にpushしない。差分は破棄するか、クローンごと削除する（7-3-a）'
             if ($text -match 'リポジトリがまだ無い') { return $null }
             if ($text -match '結果: 追跡ファイルの変更なし・未pushなし') {
-                Write-Host '  → 追跡ファイルの変更も未pushのコミットも無い' -ForegroundColor Magenta
+                Write-Mark 'OK' '追跡ファイルの変更も未pushのコミットも無い'
                 if ($text -notmatch '未追跡ファイル[\s\S]*?（なし）') {
-                    Write-Host '     未追跡ファイル（docs・生成物など）はクローンごと削除して消す（7-3-a）' -ForegroundColor DarkGray
+                    Write-Host '        未追跡ファイル（docs・生成物など）はクローンごと削除して消す（7-3-a）' -ForegroundColor DarkGray
                 }
                 return 'OK'
             }
             if ($text -match '結果: 追跡ファイルの変更または未pushのコミットがある') {
-                Write-Host '  → 追跡ファイルに変更、または未pushのコミットがある。破棄するかクローンごと消す' -ForegroundColor Red
+                Write-Mark 'NG' '追跡ファイルに変更、または未pushのコミットがある。破棄するかクローンごと消す'
                 return 'NG'
             }
             return $null
@@ -1419,21 +1427,32 @@ function Read-Verdict($Step, [string]$Output, [double]$Seconds, [string]$Suggest
         $c = if ($Suggest -eq 'NG') { 'Red' } else { 'Magenta' }
         Write-Host ("  判定の目安: {0}" -f $Suggest) -ForegroundColor $c
     }
+    # 目安を出したなら、Enter はその目安にする。「目安: NG」と出した直後に
+    # Enter が OK になるのは、惰性で押したときに誤って記録される。
+    $default = if ($Suggest) { $Suggest } else { 'OK' }
     while ($true) {
-        $ans = Read-Key '判定  [Enter]=OK   [n]=NG   [h]=保留   [m]=メモを書く   [q]=保留にして中断'
-        switch ($ans.ToLower()) {
-            ''  { Add-Result $Step 'OK'   $Output $memo $Seconds; Write-Host '  OK として記録' -ForegroundColor Green;  return }
-            'n' { Add-Result $Step 'NG'   $Output $memo $Seconds; Write-Host '  NG として記録' -ForegroundColor Red;    return }
-            'h' { Add-Result $Step '保留' $Output $memo $Seconds; Write-Host '  保留として記録' -ForegroundColor Yellow; return }
-            'm' { $memo = Read-Host '  メモ' }
-            'q' {
-                Add-Result $Step '保留' $Output $memo $Seconds
-                $script:Aborted = $true
-                Write-Host '  保留として記録し、中断する' -ForegroundColor Yellow
-                return
-            }
-            default { Write-Host '  Enter / n / h / m / q のいずれかを入力する' -ForegroundColor DarkGray }
+        $ans = Read-Key ("判定  [Enter]={0}   [o]=OK   [n]=NG   [h]=保留   [m]=メモを書く   [q]=保留にして中断" -f $default)
+        $v = switch ($ans.ToLower()) {
+            ''  { $default }
+            'o' { 'OK' }
+            'n' { 'NG' }
+            'h' { '保留' }
+            default { $null }
         }
+        if ($v) {
+            Add-Result $Step $v $Output $memo $Seconds
+            $c = switch ($v) { 'OK' { 'Green' } 'NG' { 'Red' } default { 'Yellow' } }
+            Write-Host ("  {0} として記録" -f $v) -ForegroundColor $c
+            return
+        }
+        if ($ans.ToLower() -eq 'm') { $memo = Read-Host '  メモ'; continue }
+        if ($ans.ToLower() -eq 'q') {
+            Add-Result $Step '保留' $Output $memo $Seconds
+            $script:Aborted = $true
+            Write-Host '  保留として記録し、中断する' -ForegroundColor Yellow
+            return
+        }
+        Write-Host '  Enter / o / n / h / m / q のいずれかを入力する' -ForegroundColor DarkGray
     }
 }
 
@@ -1673,12 +1692,6 @@ if (-not (Test-Path $script:OutRoot)) { New-Item -ItemType Directory -Force -Pat
 
 Write-Head ' 事前確認書 第I部（実機確認）'
 Write-Host @"
-  1ステップずつコマンドと結果を表示する。判定とメモをその場で入力すると、
-  そのつど記録ファイルへ書き足される。
-
-  管理者権限は不要。<設定変更> と表示されるステップだけが機材の状態を変え、
-  既定はスキップ、y を押したときだけ実行する（すべて7章で元へ戻す）。
-
   スクリプトの版: $script:ScriptVersion
   対象章       : $($script:TargetChapters -join ', ')  （全 $total ステップ）
   作業フォルダ : $script:WorkRoot
@@ -1849,7 +1862,7 @@ foreach ($step in $steps) {
             Write-Host '  人に尋ねる項目のため未実施として記録' -ForegroundColor DarkGray
             continue
         }
-        $ans = Read-Key '回答を入力（[q]=中断   Enterのみ=スキップ）'
+        $ans = Read-Key '回答を入力   [Enter]のみ=スキップ   [q]=中断'
         if ($ans.ToLower() -eq 'q') { $script:Aborted = $true; break }
         if (-not $ans) {
             Add-Result $step 'スキップ' '' ''
@@ -1922,7 +1935,8 @@ foreach ($step in $steps) {
             Set-AutoVerdict $step $r
             continue
         }
-        $ans = Read-Key '[y]=実行する   [Enter]=スキップ（既定）   [q]=中断'
+        # ここだけ Enter が「やらない」側になる。影響の大きいステップなので明示する
+        $ans = Read-Key '[y]=実行する   [Enter]=スキップ ← ここだけ既定が「やらない」   [q]=中断'
         if ($ans.ToLower() -eq 'q') { $script:Aborted = $true; break }
         if ($ans.ToLower() -ne 'y') {
             $memo = '設定変更のため実行しなかった'

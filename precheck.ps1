@@ -34,7 +34,12 @@
            引数を渡す場合は末尾に足す:
            & ([scriptblock]::Create((Get-Content .\precheck.ps1 -Raw))) -DryRun
 
-    出力されるファイル（既定はデスクトップ。-OutDir で変えられる）
+    出力されるファイル
+
+        既定の置き場は C:\rehearsal-<日付>（作れない機材では利用者フォルダ直下）。
+        作業フォルダ（EShopのclone先）も同じところになるので、終わったらフォルダごと
+        消せば片付く。デスクトップを使わないのは、OneDriveへ同期されると6章の所要時間
+        の実測が当てにならなくなるため。-WorkDir / -OutDir で変えられる。
 
         precheck-result-<日時>.md   判定・所要時間・各ステップの出力とメモ
                                     1ステップごとに書き足すので、中断しても残る
@@ -54,9 +59,9 @@
         -AllowChanges    -Auto のときに、機材の状態を変えるステップも実行する
                          （既定では実行しない）
         -Chapter 2,3     指定した章だけを実施する（既定は2〜7章すべて）
-        -WorkDir <path>  EShopをcloneする作業フォルダ（既定 Desktop\rehearsal）
+        -WorkDir <path>  EShopをcloneする作業フォルダ（既定 C:\rehearsal-<日付>）
         -MaterialDir <p> docs-template があるフォルダ（4-4-01で使う。既定はこのスクリプトの場所）
-        -OutDir <path>   記録の出力先（既定 Desktop）
+        -OutDir <path>   記録の出力先（既定は作業フォルダと同じ）
         -NoTranscript    Start-Transcriptを使わない
 #>
 
@@ -77,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = 'd4a15c4f（2026-09-17 配備）'
+$script:ScriptVersion = 'f0da6522（2026-09-17 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -727,9 +732,7 @@ function Set-StepList {
         -Cmd { claude --version } `
         -Hint {
             param($text)
-            # Hintが読むのは伏せ字を当てたあとのテキストなので、4つドット区切りの版は
-            # IPアドレスとみなされて <アドレス> に潰れる。そのときも「取れている」と扱う。
-            if ($text -match '(?m)^\s*(\d+\.\d+|<アドレス>)') { Write-Host '  → 版を取得できた' -ForegroundColor Magenta; return 'OK' }
+            if ($text -match '(?m)^\s*\d+\.\d+') { Write-Host '  → 版を取得できた' -ForegroundColor Magenta; return 'OK' }
             Write-Host '  → claude を解決できない。導入に失敗したか、PATHが通っていない' -ForegroundColor Red
             Write-Host '     4-3-01 をスキップしたならここもNGでよい。実行したなら新しいターミナルで試す' -ForegroundColor Red
             return 'NG'
@@ -1381,11 +1384,16 @@ function Invoke-Step($Step) {
     $sec = [math]::Round($sw.Elapsed.TotalSeconds, 1)
     Write-Host ("  所要 {0} 秒" -f $sec) -ForegroundColor DarkGray
     if ($Step.TimeKey) { $script:Timings[$Step.TimeKey] = $sec }
-    $text = Hide-NetworkInfo (Remove-AnsiEscape ($raw | Out-String -Width 200))
+    # 記録に残すのは伏せ字を当てたもの、判定は当てる前のもので行う。
+    # 伏せ字の対象と形が重なる値（4つドット区切りの版番号など）が潰れて、判定が
+    # 壊れるのを根元で防ぐ。Hint が出すのは件数や空き容量などの抽出値だけなので、
+    # 当てる前を渡しても画面や記録に客先の情報は出ない。
+    $clean = Remove-AnsiEscape ($raw | Out-String -Width 200)
+    $text = Hide-NetworkInfo $clean
     $script:Captured[$Step.Id] = $text
     $suggest = $null
     if ($Step.Hint) {
-        try { $suggest = & $Step.Hint $text } catch { }
+        try { $suggest = & $Step.Hint $clean } catch { }
     }
     if ($suggest) { $suggest = ("$suggest").Trim() }
     if ($suggest -and $suggest -notin 'OK', 'NG', '保留') { $suggest = $null }
@@ -1570,29 +1578,31 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
 # クラウドへ同期される。6章の所要時間の実測が当てにならなくなり、同期中の
 # ロックで pip install や git switch が落ちることもある。
 # 作業フォルダと記録を同じ1フォルダにまとめ、7-3でフォルダごと片付くようにする。
-function Test-CanCreateDir([string]$Parent) {
-    if (-not $Parent -or -not (Test-Path $Parent -PathType Container)) { return $false }
-    $probe = Join-Path $Parent ".precheck-probe-$PID"
-    try {
-        New-Item -ItemType Directory -Force -Path $probe -ErrorAction Stop | Out-Null
-        Remove-Item $probe -Recurse -Force -ErrorAction SilentlyContinue
-        return $true
-    } catch { return $false }
-}
-
 function Get-DefaultBase {
-    $name = "rehearsal-$(Get-Date -Format 'yyyyMMdd')"
-    # C:\ 直下は標準ユーザーでもフォルダを作れる。エクスプローラーで見えるので
-    # 消し忘れにくく、日付が入るので前回の残りとも区別できる。
+    # 前日に社内で clone しておいて当日走らせる段取りがあるため、スクリプトが
+    # rehearsal-<日付> の下に置かれているならそのフォルダを使い、置き場が
+    # 日付違いで割れないようにする。フォルダ名で判定しているので、正本を教材
+    # リポジトリから直接実行したとき（親が SW編）はマッチせず下の既定に落ちる。
+    $here = if ($PSScriptRoot) { Split-Path $PSScriptRoot -Parent } else { $null }
+    if ($here -and (Split-Path $here -Leaf) -match '^rehearsal-\d{8}$') { return $here }
+
+    # システムドライブ直下は標準ユーザーでもフォルダを作れる。エクスプローラーで
+    # 見えるので消し忘れにくく、日付が入るので前回の残りとも区別できる。
     # GPOで絞られている機材のために、利用者フォルダ直下へ退避する。AppData配下は
     # 同期こそされないが見えない場所なので、消し忘れる方が怖い。
-    foreach ($parent in 'C:\', $env:USERPROFILE) {
-        if (Test-CanCreateDir $parent) { return (Join-Path $parent $name) }
+    # 作れるかは実際に作って確かめる。試し書きして消す形だと、要らない書き込みが
+    # 増えるうえ、消し損ねても気づけない。
+    $name = "rehearsal-$(Get-Date -Format 'yyyyMMdd')"
+    foreach ($root in "$env:SystemDrive\", $env:USERPROFILE) {
+        if (-not $root) { continue }
+        $p = Join-Path $root $name
+        try { New-Item -ItemType Directory -Force -Path $p -ErrorAction Stop | Out-Null; return $p } catch { }
     }
     return (Join-Path ([Environment]::GetFolderPath('Desktop')) $name)
 }
 
-$script:DefaultBase = Get-DefaultBase
+# 両方とも指定されているなら既定は要らない。要らないフォルダを作らない
+$script:DefaultBase = if ($WorkDir -and $OutDir) { $null } else { Get-DefaultBase }
 $script:WorkRoot = if ($WorkDir) { $WorkDir } else { $script:DefaultBase }
 $script:RepoDir = Join-Path $script:WorkRoot 'EShop'
 $script:SrcDir = Join-Path $script:RepoDir 'src'
@@ -1710,7 +1720,8 @@ if ($onDrive.Count -gt 0) {
     Write-Host '  作業フォルダが同期されると .venv と .git が同期の対象になり、6章の所要時間の' -ForegroundColor Red
     Write-Host '  実測が当てにならなくなる。同期中のロックで pip install が落ちることもある' -ForegroundColor Red
     Write-Host '  記録は7-3で機材から消してもクラウド側に残る' -ForegroundColor Red
-    Write-Host ("    例: -WorkDir {0} -OutDir {0}" -f $script:DefaultBase) -ForegroundColor DarkGray
+    $example = Join-Path "$env:SystemDrive\" "rehearsal-$(Get-Date -Format 'yyyyMMdd')"
+    Write-Host ("    例: -WorkDir {0} -OutDir {0}" -f $example) -ForegroundColor DarkGray
 }
 
 try {

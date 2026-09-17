@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '70bbf286（2026-09-17 配備）'
+$script:ScriptVersion = '2a1aa246（2026-09-17 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -115,12 +115,16 @@ function Write-Label([string]$label, [string]$value, [string]$color = 'Gray') {
     }
 }
 
+function Get-MarkLabel([string]$Mark) {
+    # 全角混在のため -4 の書式指定では揃わない。半角2文字のものだけ空白で埋める
+    switch ($Mark) { 'OK' { 'OK  ' } 'NG' { 'NG  ' } default { $Mark } }
+}
+
 function Write-Mark([string]$Mark, [string]$Text) {
     # 判定を行頭に出す。色が落ちる記録（rehearsal-check.txt）でも、読み飛ばしてよい行と
     # ここで止まる行が見分けられるようにするため。幅を揃えて後続の説明行とぶら下げを合わせる。
-    $label = switch ($Mark) { 'OK' { 'OK  ' } 'NG' { 'NG  ' } default { $Mark } }
     $color = switch ($Mark) { 'OK' { 'Magenta' } 'NG' { 'Red' } '保留' { 'Yellow' } default { 'DarkGray' } }
-    Write-Host ('  {0}  {1}' -f $label, $Text) -ForegroundColor $color
+    Write-Host ('  {0}  {1}' -f (Get-MarkLabel $Mark), $Text) -ForegroundColor $color
 }
 
 function Remove-AnsiEscape([string]$Text) {
@@ -1417,21 +1421,26 @@ function Set-AutoVerdict($Step, $Result) {
         $memo = '判定の根拠が無いステップ。出力を見て講師が判断する'
     }
     $c = switch ($verdict) { 'OK' { 'Green' } 'NG' { 'Red' } default { 'DarkGray' } }
-    Write-Host ("  {0} として記録" -f $verdict) -ForegroundColor $c
+    Write-Host ("  {0}  として記録" -f (Get-MarkLabel $verdict)) -ForegroundColor $c
     Add-Result $Step $verdict $Result.Text $memo $Result.Seconds
 }
 
 function Read-Verdict($Step, [string]$Output, [double]$Seconds, [string]$Suggest) {
     $memo = ''
-    if ($Suggest) {
-        $c = if ($Suggest -eq 'NG') { 'Red' } else { 'Magenta' }
-        Write-Host ("  判定の目安: {0}" -f $Suggest) -ForegroundColor $c
-    }
-    # 目安を出したなら、Enter はその目安にする。「目安: NG」と出した直後に
-    # Enter が OK になるのは、惰性で押したときに誤って記録される。
+    # 目安があるならそれを Enter の既定にする。「目安: NG」と出した直後に Enter が OK に
+    # なると、惰性で押したときに誤って記録される。Enter のラベルが目安を兼ねるので、
+    # 「判定の目安: NG」の行は別に出さない（同じことを2度言わない）。
     $default = if ($Suggest) { $Suggest } else { 'OK' }
+    # 既定と同じキーは出さない。出すと同じ判定にキーが2つ並んで、違いが画面に出ない
+    $keys = @('[Enter]={0}{1}' -f $default, $(if ($Suggest) { '（目安どおり）' } else { '' }))
+    if ($default -ne 'OK') { $keys += '[o]=OK' }
+    if ($default -ne 'NG') { $keys += '[n]=NG' }
+    if ($default -ne '保留') { $keys += '[h]=保留' }
+    $keys += '[m]=メモを書く'
+    $keys += '[q]=保留にして中断'
+    $prompt = '判定  ' + ($keys -join '   ')
     while ($true) {
-        $ans = Read-Key ("判定  [Enter]={0}   [o]=OK   [n]=NG   [h]=保留   [m]=メモを書く   [q]=保留にして中断" -f $default)
+        $ans = Read-Key $prompt
         $v = switch ($ans.ToLower()) {
             ''  { $default }
             'o' { 'OK' }
@@ -1442,7 +1451,7 @@ function Read-Verdict($Step, [string]$Output, [double]$Seconds, [string]$Suggest
         if ($v) {
             Add-Result $Step $v $Output $memo $Seconds
             $c = switch ($v) { 'OK' { 'Green' } 'NG' { 'Red' } default { 'Yellow' } }
-            Write-Host ("  {0} として記録" -f $v) -ForegroundColor $c
+            Write-Host ("  {0}  として記録" -f (Get-MarkLabel $v)) -ForegroundColor $c
             return
         }
         if ($ans.ToLower() -eq 'm') { $memo = Read-Host '  メモ'; continue }

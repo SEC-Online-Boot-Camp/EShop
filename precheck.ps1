@@ -38,6 +38,10 @@
     引数
 
         -DryRun          何も実行せず、全ステップの内容だけを順に表示する（下見用）
+        -OnSite          実環境リハーサル用。貸与機でしか測れない項目に絞り、機械が判定
+                         できるステップは確認を求めずに流す。止まるのは人が操作・判断
+                         するところだけ。社内で確定させる5章の挙動確認（5-2〜5-9）は
+                         対象から外れる
         -Auto            確認を求めずに実行する。判定の根拠があるステップは自動で判定し、
                          無いものは「自動」として記録する。人が操作するステップ
                          （手動操作・聞き取り）は「未実施」として記録し、飛ばす
@@ -53,6 +57,7 @@
 [CmdletBinding()]
 param(
     [switch]$DryRun,
+    [switch]$OnSite,
     [switch]$Auto,
     [switch]$AllowChanges,
     [string[]]$Chapter,
@@ -63,6 +68,13 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+
+# PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
+# PowerShell 7 は [Console]::OutputEncoding が既定でUTF-8だが、Pythonはパイプ出力のとき
+# ロケールの文字コード（日本語WindowsならCP932）で書くため、揃えないと記録が文字化けし、
+# seedの件数の自動判定も誤る（2026-09-17 にPowerShell 7.6.6で実測）。
+$script:ConsoleCodePage = [Console]::OutputEncoding.CodePage
+$env:PYTHONIOENCODING = if ($script:ConsoleCodePage -eq 65001) { 'utf-8' } else { "cp$($script:ConsoleCodePage)" }
 
 # ---------------------------------------------------------------- 表示ヘルパ
 
@@ -91,6 +103,52 @@ function Remove-AnsiEscape([string]$Text) {
     if (-not $Text) { return $Text }
     $esc = [char]27
     return ($Text -replace "$esc\[[0-9;?]*[ -/]*[@-~]", '' -replace "$esc\][^$esc]*($([char]7)|$esc\\)", '')
+}
+
+function Add-Redaction([string]$Value, [string]$Label) {
+    if (-not $Value) { return }
+    foreach ($tok in ($Value -split '[,;]')) {
+        $t = $tok.Trim()
+        if (-not $t) { continue }
+        if ($t -match '^(localhost|127\.0\.0\.1|::1|<local>|\*)$') { continue }
+        if ($t.Length -lt 5) { continue }
+        if ($script:Redactions | Where-Object { $_.Text -eq $t }) { continue }
+        $script:Redactions += [pscustomobject]@{ Text = $t; Label = $Label }
+    }
+}
+
+function Hide-NetworkInfo([string]$Text) {
+    # 記録に残す文字列から、客先のネットワーク情報を伏せる。
+    # pip や git が失敗したときの文面にプロキシのアドレスが混ざることがあるため、
+    # 画面には出したまま、ファイルへ書く分だけ置き換える。
+    if (-not $Text) { return $Text }
+    foreach ($r in $script:Redactions) {
+        $Text = $Text -replace [regex]::Escape($r.Text), $r.Label
+    }
+    # IPアドレス（CIDR・ポート付きも）。127.0.0.1 は残す
+    $Text = $Text -replace '(?<!\d)(?!127\.0\.0\.1(?!\d))\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(/\d{1,2})?(:\d+)?', '<アドレス>'
+    # 172.20.* のようなワイルドカード表記
+    $Text = $Text -replace '(?<!\d)\d{1,3}\.\d{1,3}(\.\d{1,3})?\.\*', '<アドレス>'
+    return $Text
+}
+
+function Get-Reachability([string]$Text) {
+    # 3-4-1 / 3-4-2 の出力から、到達できた数と落ちた数を数える
+    $ok = 0; $bad = 0; $auth = $false
+    foreach ($line in ($Text -split "`n")) {
+        if ($line -match '^\s*(https\S+)\s+(.+?)\s*$') {
+            $v = $Matches[2].Trim()
+            if ($v -match '^\d+$') {
+                if ($v -eq '407') { $auth = $true; $bad++ }
+                elseif ($v -match '^(200|301|302|401|403|404)$') { $ok++ }
+                else { $bad++ }
+            } else {
+                $bad++
+                if ($v -match '407') { $auth = $true }
+            }
+        }
+    }
+    return @{ OK = $ok; Bad = $bad; Auth = $auth }
 }
 
 function Read-Key([string]$prompt) {
@@ -123,13 +181,15 @@ function New-Step {
         [scriptblock]$When,
         [string]$Ask,
         [string]$TimeKey,
-        [switch]$NeedsInput
+        [switch]$NeedsInput,
+        [ValidateSet('', 'materials')]
+        [string]$Site = ''
     )
     $script:Steps += [pscustomobject]@{
         Id = $Id; Ch = $Ch; Title = $Title; Kind = $Kind
         Purpose = $Purpose; Expect = $Expect; Show = $Show
         Cmd = $Cmd; Hint = $Hint; When = $When; Ask = $Ask; TimeKey = $TimeKey
-        NeedsInput = [bool]$NeedsInput
+        NeedsInput = [bool]$NeedsInput; Site = $Site
     }
 }
 
@@ -195,10 +255,6 @@ function Set-StepList {
                 Select-Object ProductName, DisplayVersion, CurrentBuild, UBR
         }
 
-    New-Step -Id '2-1-b' -Ch '2' -Title 'ログインユーザーの権限' -Kind ask `
-        -Purpose '受講者と同じ権限で実施しているかを確かめる（管理者に昇格しない）' `
-        -Ask 'この端末のログインユーザーは 管理者 / 標準ユーザー のどちらですか'
-
     New-Step -Id '2-1-c' -Ch '2' -Title 'PowerShellの実行ポリシー' -Kind auto `
         -Purpose '.venv\Scripts\activate が通るかを左右する' `
         -Expect 'MachinePolicy / UserPolicy が Undefined 以外なら、グループポリシーで縛られている' `
@@ -254,14 +310,6 @@ function Set-StepList {
             }
         }
 
-    New-Step -Id '2-1-e' -Ch '2' -Title 'ウイルス対策・EDRの介入' -Kind ask `
-        -Purpose 'インストーラやスクリプトがブロックされないかを見る' `
-        -Ask '気づいた事象があれば入力（無ければEnter）'
-
-    New-Step -Id '2-1-f' -Ch '2' -Title '機材の台数・構成の揃い' -Kind ask `
-        -Purpose '1台だけ違う構成だと当日詰まる' `
-        -Ask '貸与元・台数・予備機の有無、全台が同じ構成か'
-
     New-Step -Id '2-2-a' -Ch '2' -Title 'VS Codeの版' -Kind auto `
         -Expect '導入済みであること' `
         -Cmd { code --version }
@@ -297,62 +345,142 @@ function Set-StepList {
         -Expect 'VS Codeの既定ターミナルがどちらかを記録する' `
         -Cmd { $PSVersionTable.PSVersion; "PSEdition = $($PSVersionTable.PSEdition)" }
 
-    New-Step -Id '2-2-e' -Ch '2' -Title 'Excelの有無' -Kind ask `
+    New-Step -Id '2-2-e' -Ch '2' -Title 'Excelの有無' -Kind auto `
         -Purpose '01-05-セキュリティチェックシート.xlsx の編集に必要' `
-        -Ask 'Excelで xlsx を編集できますか（有 / 無）'
-
-    # ====================== 3章 ネットワークとプロキシ ======================
-
-    New-Step -Id '3-2-1' -Ch '3' -Title '環境変数（3スコープ）' -Kind auto `
-        -Purpose 'curl・pip・Claude Codeはここだけを見る' `
-        -Expect '何も出なければ未設定。小文字の場合もある' `
+        -Expect 'Excelが導入されていること' `
+        -Show 'レジストリのApp Pathsと、.xlsx に関連付けられたアプリを見る' `
         -Cmd {
-            Get-ChildItem Env: | Where-Object Name -match 'proxy' | Format-Table -AutoSize
-            'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY' | ForEach-Object { "User    {0} = {1}" -f $_, [Environment]::GetEnvironmentVariable($_, 'User') }
-            'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY' | ForEach-Object { "Machine {0} = {1}" -f $_, [Environment]::GetEnvironmentVariable($_, 'Machine') }
-        }
-
-    New-Step -Id '3-2-2' -Ch '3' -Title 'Windows側の設定（WinINET・PAC・WinHTTP）' -Kind auto `
-        -Purpose 'ブラウザとVS Codeが見る設定' `
-        -Expect 'ProxyEnable / ProxyServer / AutoConfigURL / ProxyOverride を記録する' `
-        -Cmd {
-            Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' |
-                Select-Object ProxyEnable, ProxyServer, ProxyOverride, AutoConfigURL, AutoDetect
-            netsh winhttp show proxy
+            $ex = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\EXCEL.EXE' -ErrorAction SilentlyContinue
+            if ($ex) { "App Paths     : $($ex.'(default)')" } else { 'App Paths     : 見つからない' }
+            $assoc = try { (cmd /c assoc .xlsx 2>&1) } catch { '' }
+            "関連付け(.xlsx): $assoc"
         } `
         -Hint {
             param($text)
-            if ($text -match 'AutoConfigURL\s*:\s*\S') { Write-Host '  → PAC方式。アドレスは 3-2-3 で解決する' -ForegroundColor Magenta }
-            if ($text -match 'Direct access') { Write-Host '  → WinHTTPは直結（プロキシなし、または透過型）' -ForegroundColor Magenta }
-            if ($text -match '<local>') { Write-Host '  → ローカルアドレスは迂回される（Swagger UIの表示に必要）' -ForegroundColor Magenta }
+            if ($text -match 'EXCEL\.EXE') { Write-Host '  → Excelが導入されている' -ForegroundColor Magenta; return 'OK' }
+            Write-Host '  → Excelが見つからない。1章の演習（xlsxの編集）ができない' -ForegroundColor Red
+            return 'NG'
         }
 
-    New-Step -Id '3-2-3' -Ch '3' -Title '実効プロキシの解決（PACでもアドレスが判る）' -Kind auto `
-        -Purpose '01-01手順書のプレースホルダに入れる実値を得る' `
-        -Expect 'bypass列とセットで読む。bypass=Trueの行はプロキシを経由しない' `
+    # ====================== 3章 ネットワークとプロキシ ======================
+
+    New-Step -Id '3-2-1' -Ch '3' -Title 'プロキシ設定の有無' -Kind auto `
+        -Purpose 'curl・pip・Claude Codeは環境変数だけを見る。設定されているかをまず見る' `
+        -Expect '有無が3スコープで記録される' `
+        -Show @"
+  HTTP_PROXY / HTTPS_PROXY / NO_PROXY が設定されているかを、
+  User・Machine・いま動いているプロセスの3スコープで確認する。
+
+  **値は表示しない**（有無だけを見る）。アドレスが必要な場合は3-2-4を参照。
+"@ `
+        -Cmd {
+            foreach ($n in 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY') {
+                $u = [Environment]::GetEnvironmentVariable($n, 'User')
+                $m = [Environment]::GetEnvironmentVariable($n, 'Machine')
+                $p = [Environment]::GetEnvironmentVariable($n)
+                $f = { param($v) if ($v) { '設定あり' } else { 'なし    ' } }
+                "{0,-12} User={1}  Machine={2}  プロセス={3}" -f $n, (& $f $u), (& $f $m), (& $f $p)
+            }
+        } `
+        -Hint {
+            param($text)
+            if ($text -match 'プロセス=設定あり') {
+                Write-Host '  → 設定されている。curl・pip・git はプロキシを使う状態' -ForegroundColor Magenta
+            } else {
+                Write-Host '  → 設定されていない。3-4-1が通らなければ、手順書に設定を載せる（11章）' -ForegroundColor Magenta
+            }
+        }
+
+    New-Step -Id '3-2-2' -Ch '3' -Title 'プロキシ設定の方式' -Kind auto `
+        -Purpose 'ブラウザとVS Codeが見る設定。方式によって受講者への案内が変わる' `
+        -Expect '固定アドレス指定 / PAC / WPAD自動検出 / なし のいずれかが判る' `
+        -Show @"
+  レジストリ（WinINET）と netsh winhttp から、**方式だけ**を読む。
+  アドレス・PACのURL・除外リストは表示しない（3-2-4を参照）。
+"@ `
+        -Cmd {
+            $k = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' -ErrorAction SilentlyContinue
+            $has = { param($v) if ($v) { 'あり' } else { 'なし' } }
+            "ProxyEnable   : $($k.ProxyEnable)"
+            "ProxyServer   : $(& $has $k.ProxyServer)　（固定アドレスの明示設定）"
+            "AutoConfigURL : $(& $has $k.AutoConfigURL)　（PAC方式）"
+            "AutoDetect    : $(& $has $k.AutoDetect)　（WPAD自動検出）"
+            $ovr = $k.ProxyOverride
+            "ProxyOverride : $(& $has $ovr)　ローカル除外(<local>)の指定: $(if ($ovr -match '<local>') { 'あり' } else { 'なし' })"
+            $nsh = (netsh winhttp show proxy 2>&1 | Out-String)
+            if ($nsh -match 'Direct access|直接アクセス') { 'WinHTTP       : 直結（プロキシなし、または透過型）' }
+            elseif ($nsh -match 'Proxy Server') { 'WinHTTP       : プロキシの指定あり' }
+            else { 'WinHTTP       : 判別できない' }
+            ''
+            $way = @()
+            if ($k.ProxyEnable -eq 1 -and $k.ProxyServer) { $way += '固定アドレス指定' }
+            if ($k.AutoConfigURL) { $way += 'PAC' }
+            if ($k.AutoDetect) { $way += 'WPAD自動検出' }
+            if ($way.Count -eq 0) { '方式: 明示的な設定なし（透過型の可能性）' } else { "方式: $($way -join ' + ')" }
+        } `
+        -Hint {
+            param($text)
+            if ($text -match 'PAC') { Write-Host '  → PAC方式。宛先ごとの振り分けは3-2-3で見る' -ForegroundColor Magenta }
+            if ($text -match 'ローカル除外\(<local>\)の指定: あり') { Write-Host '  → ローカルアドレスは迂回される（Swagger UIの表示に必要）' -ForegroundColor Magenta }
+        }
+
+    New-Step -Id '3-2-3' -Ch '3' -Title '宛先ごとの経路（プロキシ経由か直結か）' -Kind auto `
+        -Purpose 'PAC方式でも宛先ごとの振り分けが判る。ローカルの迂回もここで見える' `
+        -Expect '講座で使うホストが「プロキシ経由」か「直結」か。127.0.0.1は直結であること' `
+        -Show @"
+  システムのプロキシ設定に、宛先ごとの経路を問い合わせる。
+  **プロキシのアドレスは表示しない**（経路の種別と迂回の有無だけ）。
+"@ `
         -Cmd {
             $p = [System.Net.WebRequest]::GetSystemWebProxy()
             'https://claude.ai', 'https://api.anthropic.com', 'https://downloads.claude.ai', 'https://github.com', 'https://pypi.org', 'https://files.pythonhosted.org', 'https://marketplace.visualstudio.com', 'http://127.0.0.1:8000/docs' |
-                ForEach-Object { $u = [Uri]$_; "{0,-45} -> {1}  bypass={2}" -f $_, $p.GetProxy($u), $p.IsBypassed($u) }
+                ForEach-Object {
+                    $u = [Uri]$_
+                    $via = $p.GetProxy($u)
+                    $bypass = $p.IsBypassed($u)
+                    $route = if ($bypass -or $via.AbsoluteUri -eq $u.AbsoluteUri) { '直結' } else { 'プロキシ経由' }
+                    "{0,-45} {1}  bypass={2}" -f $_, $route, $bypass
+                }
+        } `
+        -Hint {
+            param($text)
+            foreach ($line in ($text -split "`n")) {
+                if ($line -match '127\.0\.0\.1' -and $line -match 'プロキシ経由') {
+                    Write-Host '  → 127.0.0.1がプロキシに投げられる。Swagger UIの確認で詰まる（3-5-b参照）' -ForegroundColor Red
+                    return 'NG'
+                }
+            }
+            Write-Host '  → 127.0.0.1は直結。宛先ごとの振り分けを記録した' -ForegroundColor Magenta
+            return 'OK'
         }
 
-    New-Step -Id '3-2-4' -Ch '3' -Title 'PACの中身' -Kind auto `
-        -Purpose '宛先ごとの振り分けを直接読む' `
-        -Expect 'PACのスクリプトが表示される' `
-        -When {
-            $v = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' -ErrorAction SilentlyContinue).AutoConfigURL
-            [bool]$v
-        } `
-        -Show "Invoke-WebRequest -Uri <AutoConfigURLの値> -UseBasicParsing -TimeoutSec 10 -NoProxy | Select-Object -ExpandProperty Content`n（-NoProxy は PowerShell 7 のみ。5.1 ではブラウザでURLを開いて中身を見る）" `
-        -Cmd {
-            $url = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings').AutoConfigURL
-            "AutoConfigURL = $url"
-            if ($PSVersionTable.PSVersion.Major -ge 6) {
-                (Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10 -NoProxy).Content
-            } else {
-                'PowerShell 5.1 には -NoProxy が無い。ブラウザで上のURLを開いて中身を確認する'
-            }
-        }
+    New-Step -Id '3-2-4' -Ch '3' -Title 'アドレスや設定値が必要なとき（手元で実行する）' -Kind info `
+        -Purpose '手順書に載せる実アドレスが必要な場合の確認方法。記録には残さない' `
+        -Show @"
+  プロキシのアドレス・PACの中身・除外リストは、**この記録に残さない**。
+  客先のネットワーク情報であり、持ち帰る記録に含めないためである。
+
+  実値が必要になるのは、3-6-aの判定がケースB/Cのときだけ（受講者向け手順書に
+  載せるアドレス）。そのときは、講師が手元の端末で次を実行して控える。
+
+    # 環境変数の値
+    'HTTP_PROXY','HTTPS_PROXY','NO_PROXY' |
+      ForEach-Object { "{0} = {1}" -f `$_, [Environment]::GetEnvironmentVariable(`$_) }
+
+    # 宛先ごとの実効プロキシ（アドレス入り）
+    `$p = [System.Net.WebRequest]::GetSystemWebProxy()
+    `$p.GetProxy([Uri]'https://api.anthropic.com')
+
+    # レジストリ（ProxyServer・AutoConfigURL）
+    Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' |
+      Select-Object ProxyServer, ProxyOverride, AutoConfigURL
+
+    # PACの中身（PowerShell 7 のみ。5.1 はブラウザでURLを開く）
+    Invoke-WebRequest -Uri '<AutoConfigURLの値>' -UseBasicParsing -NoProxy |
+      Select-Object -ExpandProperty Content
+
+  控えた値は手順書へ直接書き、この記録ファイルには書かない。
+"@
 
     New-Step -Id '3-3' -Ch '3' -Title '判定基準の確認（読むだけ）' -Kind info `
         -Purpose 'ここを誤読すると「通っているのに遮断」と判定してしまう' `
@@ -360,7 +488,7 @@ function Set-StepList {
   200 / 301 / 302 / 401 / 403 / 404        到達成功（TLSとHTTP応答が成立している）
   タイムアウト・接続拒否                   遮断（プロキシ未設定かファイアウォール）
   407 Proxy Authentication Required        認証付きプロキシ → 3-6のケースD
-  証明書エラー（SSL certificate problem）  TLS傍受 → 3-7
+  証明書エラー（SSL certificate problem）  TLS傍受 → 4-3-08のpip installで判定する
   プロキシが返す502/503・ブロック画面      許可リストに無い → IT部門へ申請
 "@
 
@@ -438,51 +566,48 @@ function Set-StepList {
             }
         }
 
-    New-Step -Id '3-6-a' -Ch '3' -Title '判定ケースの決定' -Kind ask `
-        -Purpose 'ここまでの結果で、受講者に案内する内容が決まる' `
-        -Show @"
-  A  全ツールがそのまま通る                              → 設定不要
-  B  ブラウザとVS Codeは通るが curl・pip・git が通らない → 環境変数を設定
-  C  環境変数の設定が必要                                → 次のステップで setx
-  D  407が返る（認証付きプロキシ）                       → 当日対応では解決しない。IT部門へ申請
-  E  TLS傍受あり                                         → 3-7へ
-"@ `
-        -Ask 'ケース（A / B / C / D / E）'
-
-    New-Step -Id '3-6-b' -Ch '3' -Title 'プロキシの環境変数を設定する' -Kind change -NeedsInput `
-        -Purpose 'ケースB・Cのときだけ実施する。7-2-bで必ず削除する' `
-        -Expect 'setx が成功する（新しく開くプロセスにのみ効く）' `
-        -Show @"
-  setx HTTP_PROXY  "http://<アドレス>:<ポート>"
-  setx HTTPS_PROXY "http://<アドレス>:<ポート>"
-  setx NO_PROXY    "localhost,127.0.0.1,::1"
-
-  実行するとアドレスとポートを尋ねる。設定後はVS Codeを再起動する。
-  資格情報をURLに埋める形（http://user:pass@host:port）は採用しない。
-"@ `
+    New-Step -Id '3-6-a' -Ch '3' -Title '判定ケース（3-4の結果から決まる）' -Kind auto `
+        -Purpose '受講者に案内する内容が、ここで決まる。人が選ぶのではなく3-4の結果から導く' `
+        -Expect 'A〜Dのいずれか。3-4を実施していなければ「判定できない」' `
+        -Show '3-4-1（環境変数の経路）と3-4-2（システム設定の経路）の結果を数え、ケースを判定する' `
         -Cmd {
-            $addr = Read-Host '  プロキシのアドレス（例 proxy.example.local）'
-            $port = Read-Host '  ポート（例 8080）'
-            if (-not $addr -or -not $port) { '入力が空のため中止した'; return }
-            $url = "http://${addr}:${port}"
-            setx HTTP_PROXY $url
-            setx HTTPS_PROXY $url
-            setx NO_PROXY 'localhost,127.0.0.1,::1'
-            $script:ChangedEnv = $true
-            "設定した: $url （7-2で削除する）"
+            $curl = $script:Captured['3-4-1']
+            $ps = $script:Captured['3-4-2']
+            if (-not $curl -or -not $ps) {
+                '判定できない: 3-4-1 / 3-4-2 の結果が無い（3-4を実施してから戻る）'
+                return
+            }
+            $c = Get-Reachability $curl
+            $p = Get-Reachability $ps
+            "環境変数の経路（curl）      到達 $($c.OK) / 落ち $($c.Bad)"
+            "システム設定の経路（PS）    到達 $($p.OK) / 落ち $($p.Bad)"
+            ''
+            if ($c.Auth -or $p.Auth) {
+                'ケースD: 407（認証付きプロキシ）が返っている'
+                '  → 当日対応では解決しない。IT部門に例外設定を申請する（10章）'
+            } elseif ($c.Bad -eq 0 -and $p.Bad -eq 0) {
+                'ケースA: 両系統ともすべて到達している'
+                '  → 受講者への設定案内は不要。01-01手順書のプロキシ節は不要と口頭で伝える'
+            } elseif ($c.Bad -gt 0 -and $p.Bad -eq 0) {
+                'ケースB/C: システム設定の経路は通るが、環境変数の経路が通らない'
+                '  → 受講者の手順書に環境変数の設定を載せる。実値は3-2-3で判明したものを使う'
+            } elseif ($c.Bad -eq 0 -and $p.Bad -gt 0) {
+                '環境変数の経路のみ通っている'
+                '  → ブラウザ側が通るかを3-5で必ず確認する'
+            } else {
+                '両系統とも落ちている'
+                '  → 遮断か未設定。落ちたホストを10章の申請に上げる'
+            }
+            ''
+            'ケースE（TLS傍受）は 4-3-08 の pip install の結果で判定する'
+        } `
+        -Hint {
+            param($text)
+            if ($text -match '判定できない') { return '保留' }
+            if ($text -match 'ケースA') { return 'OK' }
+            if ($text -match 'ケースD|両系統とも落ちている') { return 'NG' }
+            return '保留'
         }
-
-    New-Step -Id '3-7' -Ch '3' -Title 'TLS傍受の判定' -Kind ask `
-        -Purpose 'pipだけが証明書エラーで落ちるのが典型。対処は付録C' `
-        -Show @"
-  curl・ブラウザ・git は通るが pip だけ CERTIFICATE_VERIFY_FAILED   → 傍受あり
-  git が SSL certificate problem: unable to get local issuer …      → 傍受あり（gitがOSストアを見ていない）
-  すべて通る                                                        → 傍受なし、またはCA配布済み
-
-  傍受用のルート証明書の有無と名称は IT部門に確認する（10章の依頼事項）。
-  4-3の pip install を実行したあとに、ここへ戻って確定させてもよい。
-"@ `
-        -Ask 'TLS傍受（あり / なし / 保留）'
 
     # ====================== 4章 EShopの通し実行 ======================
 
@@ -529,7 +654,15 @@ function Set-StepList {
         -Expect '成功すること。所要時間を記録する（社内実測1.2秒）' `
         -Show 'git clone https://github.com/SEC-Online-Boot-Camp/EShop.git' `
         -Cmd {
-            if (-not (Test-Path $script:WorkRoot)) { New-Item -ItemType Directory -Force -Path $script:WorkRoot | Out-Null }
+            # 作業フォルダを用意できないまま進むと、カレントディレクトリにcloneしてしまう
+            if (-not (Test-Path $script:WorkRoot -PathType Container)) {
+                try { New-Item -ItemType Directory -Force -Path $script:WorkRoot -ErrorAction Stop | Out-Null }
+                catch { "作業フォルダを作れない: $($script:WorkRoot)`n$($_.Exception.Message)"; return }
+            }
+            if (-not (Test-Path $script:WorkRoot -PathType Container)) {
+                "作業フォルダが用意できていない: $($script:WorkRoot)（-WorkDir で指定し直す）"
+                return
+            }
             Push-Location $script:WorkRoot
             try {
                 if (Test-Path $script:RepoDir) { "既に存在するため clone をスキップ: $($script:RepoDir)"; return }
@@ -592,14 +725,17 @@ function Set-StepList {
         }
 
     New-Step -Id '4-3-08' -Ch '4' -Title '依存パッケージのインストール' -Kind auto -TimeKey 'pip' `
-        -Purpose '最も伸びやすい。TLS傍受があるとここだけ証明書エラーで落ちる（3-7）' `
+        -Purpose '最も伸びやすい。TLS傍受があるとここだけ証明書エラーで落ちる。ケースEの判定はここで行う' `
         -Expect '成功すること（社内実測31.4秒）' `
         -Show 'pip install -r requirements.txt' `
         -Cmd { Invoke-InSrc { & (Get-VenvPython) -m pip install -r requirements.txt 2>&1 } } `
         -Hint {
             param($text)
             if ($text -match 'CERTIFICATE_VERIFY_FAILED|SSLError') {
-                Write-Host '  → TLS傍受の典型。付録Cの対処へ（検証の無効化は使わない）' -ForegroundColor Red
+                Write-Host '  → TLS傍受あり（ケースE）。pipだけが証明書で落ちるのが典型' -ForegroundColor Red
+                Write-Host '     付録Cの対処へ。検証の無効化は使わない。証明書の名称はIT部門に確認（10章）' -ForegroundColor Red
+            } elseif ($text -match 'Successfully installed|Requirement already satisfied') {
+                Write-Host '  → 証明書エラーは出ていない。TLS傍受はなし（またはCAが配布済み）と判定できる' -ForegroundColor Magenta
             }
             if ($text -match 'Failed building wheel|error: subprocess-exited-with-error') {
                 Write-Host '  → wheelが無くソースビルドに落ちている。Pythonの版を合わせる判断が必要（4-2）' -ForegroundColor Red
@@ -616,6 +752,11 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match 'ユーザー2件・商品5件') { Write-Host '  → 期待どおりの件数' -ForegroundColor Magenta; return 'OK' }
+            if ($text -match 'すでにデータが投入されています') {
+                Write-Host '  → DBが残っているため投入をスキップした。件数を確認できていない' -ForegroundColor Yellow
+                Write-Host '     やり直す場合は src の ecommerce.db を消してから再実行する' -ForegroundColor Yellow
+                return '保留'
+            }
             Write-Host '  → 期待する件数（ユーザー2件・商品5件）が出ていない' -ForegroundColor Red
             return 'NG'
         }
@@ -723,6 +864,15 @@ function Set-StepList {
         -Cmd {
             Invoke-InSrc { "src: "; Get-ChildItem 'app\coupon.py' -ErrorAction SilentlyContinue | Select-Object FullName, Length }
             Invoke-InRepo { "EShop直下: "; Get-ChildItem 'docs' -ErrorAction SilentlyContinue | Select-Object Name, Length }
+        } `
+        -Hint {
+            param($text)
+            $hasCoupon = $text -match 'coupon\.py'
+            $hasDocs = $text -match '要件整理メモ|クーポンAPI設計書'
+            if ($hasCoupon -and $hasDocs) { Write-Host '  → 両方ある。実行場所が別であることを手順書に反映する（11章）' -ForegroundColor Magenta; return 'OK' }
+            if (-not $hasCoupon) { Write-Host '  → app\coupon.py が無い。No3への切り替えを確認する' -ForegroundColor Red }
+            if (-not $hasDocs) { Write-Host '  → docs の成果物が無い。4-4-01を実施する' -ForegroundColor Red }
+            return 'NG'
         }
 
     New-Step -Id '4-4-04' -Ch '4' -Title 'DBの作り直しとシード投入' -Kind auto -TimeKey 'seed-no3' `
@@ -794,40 +944,36 @@ function Set-StepList {
 
     # ====================== 5章 Claude Codeの動作確認 ======================
 
-    New-Step -Id '5-1' -Ch '5' -Title '版の記録' -Kind auto `
-        -Expect '4-3-02と同じ版であること' `
-        -Cmd { claude --version }
-
-    New-Step -Id '5-2' -Ch '5' -Title 'CLAUDE.mdの認識（手動）' -Kind manual `
+    New-Step -Id '5-2' -Ch '5' -Title 'CLAUDE.mdの認識（手動）' -Kind manual -Site materials `
         -Show "  claude の対話中に /clear のあと /context" `
         -Expect 'Memory files に EShop\CLAUDE.md が出る'
 
-    New-Step -Id '5-3' -Ch '5' -Title 'ルール適用前に .env が出力されるか（手動）' -Kind manual `
+    New-Step -Id '5-3' -Ch '5' -Title 'ルール適用前に .env が出力されるか（手動）' -Kind manual -Site materials `
         -Purpose 'ここで値が表示されないと01-03の演習前半が成立しない。最重要の確認項目' `
         -Show '  01-03-システムプロンプト設定手順.md の手順1を実施する' `
         -Expect 'ダミーの値がそのまま表示される（表示されない場合は手順書をデモ形式に切り替える判断が必要）'
 
-    New-Step -Id '5-4' -Ch '5' -Title 'ルール適用後に出力されないか（手動）' -Kind manual `
+    New-Step -Id '5-4' -Ch '5' -Title 'ルール適用後に出力されないか（手動）' -Kind manual -Site materials `
         -Show '  01-03 の手順4を実施する' `
         -Expect 'CLAUDE.md を理由に値を出さない'
 
-    New-Step -Id '5-5' -Ch '5' -Title 'ファイル参照（手動）' -Kind manual `
+    New-Step -Id '5-5' -Ch '5' -Title 'ファイル参照（手動）' -Kind manual -Site materials `
         -Show '  プロンプトに @docs/要件整理メモ.md を渡す（4-4-01で配置したもの）' `
         -Expect '内容を読み込む'
 
-    New-Step -Id '5-6' -Ch '5' -Title 'ファイル作成の権限プロンプト（手動）' -Kind manual `
+    New-Step -Id '5-6' -Ch '5' -Title 'ファイル作成の権限プロンプト（手動）' -Kind manual -Site materials `
         -Show '  03-02 でテストコードを保存させる' `
         -Expect '許可を求められる。受講者への案内を統一する'
 
-    New-Step -Id '5-7' -Ch '5' -Title 'コマンド実行の権限プロンプト（手動）' -Kind manual `
+    New-Step -Id '5-7' -Ch '5' -Title 'コマンド実行の権限プロンプト（手動）' -Kind manual -Site materials `
         -Show '  03-03 で .venv\Scripts\pytest.exe を実行させる' `
         -Expect '許可を求められる'
 
-    New-Step -Id '5-8' -Ch '5' -Title 'VS Code拡張でも同じか（手動）' -Kind manual `
+    New-Step -Id '5-8' -Ch '5' -Title 'VS Code拡張でも同じか（手動）' -Kind manual -Site materials `
         -Show '  5-3〜5-7 と同じ操作を拡張の右パネルで行う' `
         -Expect 'CLIと同じ結果'
 
-    New-Step -Id '5-9' -Ch '5' -Title '.envの抽象化後にアプリが動くか' -Kind manual `
+    New-Step -Id '5-9' -Ch '5' -Title '.envの抽象化後にアプリが動くか' -Kind manual -Site materials `
         -Show @"
   01-04-機密情報の抽象化手順.md の手順3を実施したあと、src で pytest を実行する。
   （このスクリプトの 4-3-11 と同じコマンド）
@@ -857,6 +1003,17 @@ function Set-StepList {
         -Hint {
             param($text)
             Write-Host '  → リハーサル機からは絶対にpushしない。差分は破棄するか、クローンごと削除する（7-3-a）' -ForegroundColor Magenta
+            if ($text -match 'リポジトリがまだ無い') { return $null }
+            $dirty = ($text -match '(?m)^\s*(modified|new file|deleted|renamed|変更|新規|削除):') -or
+                     ($text -match '(?m)^\?\?') -or
+                     ($text -match '--- git diff[\s\S]*?\n\S')
+            $unpushed = $text -match '(?m)^--- git log origin/main\.\.HEAD ---\s*\n\s*\S'
+            if ($dirty -or $unpushed) {
+                Write-Host '  → 差分または未pushのコミットがある。破棄するかクローンごと消す' -ForegroundColor Red
+                return 'NG'
+            }
+            Write-Host '  → 追跡対象の差分も未pushのコミットも無い' -ForegroundColor Magenta
+            return 'OK'
         }
 
     New-Step -Id '7-2-a' -Ch '7' -Title '認証情報のログアウト（手動）' -Kind manual `
@@ -868,36 +1025,42 @@ function Set-StepList {
 "@ `
         -Expect '3つすべてで講師のアカウント情報が残らないこと'
 
-    New-Step -Id '7-2-b' -Ch '7' -Title '設定した環境変数を消す' -Kind change `
-        -Purpose 'setx では消せない。ケースAと判定した場合でも、試したなら消す' `
-        -Expect '5つの環境変数が未設定に戻る' `
+    New-Step -Id '7-2-b' -Ch '7' -Title '環境変数を開始時点に戻す' -Kind change `
+        -Purpose 'setx では消せない。このリハーサルで足した分だけを戻す。実行ポリシーの変化も確かめる' `
+        -Expect '開始時点から変わった変数だけが元の値に戻り、元からあった値はそのまま残る' `
         -Show @"
-  'HTTP_PROXY','HTTPS_PROXY','NO_PROXY','PIP_CERT','NODE_EXTRA_CA_CERTS' |
-    ForEach-Object { [Environment]::SetEnvironmentVariable(`$_, `$null, 'User') }
+  起動時のUser環境変数を控えてあるので、それと比べて変わっているものだけを
+  元へ戻す。元から設定されていた値は消さない。
+
+  対象: HTTP_PROXY / HTTPS_PROXY / NO_PROXY / PIP_CERT / NODE_EXTRA_CA_CERTS
+
+  変数ごとに「変更なし」「戻した」「削除した」を表示する。
 "@ `
         -Cmd {
-            'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'PIP_CERT', 'NODE_EXTRA_CA_CERTS' |
-                ForEach-Object {
-                    [Environment]::SetEnvironmentVariable($_, $null, 'User')
-                    "{0} => {1}" -f $_, ([Environment]::GetEnvironmentVariable($_, 'User'))
+            $changed = 0
+            foreach ($n in $script:EnvNames) {
+                $now = [Environment]::GetEnvironmentVariable($n, 'User')
+                $was = $script:EnvSnapshot[$n]
+                if ($now -eq $was) {
+                    if ($was) { "変更なし: $n = $was （元からあった値。そのまま残す）" }
+                    else { "変更なし: $n （起動時から未設定）" }
+                    continue
                 }
+                [Environment]::SetEnvironmentVariable($n, $was, 'User')
+                $changed++
+                if ($was) { "戻した  : $n = $was （リハーサル中は $now だった）" }
+                else { "削除した: $n （リハーサル中に $now を設定していた）" }
+            }
+            if ($changed -eq 0) { 'このリハーサルでは環境変数を変えていない' }
+            ''
+            $pol = try { (Get-ExecutionPolicy -Scope CurrentUser -ErrorAction Stop).ToString() } catch { '(取得できない)' }
+            if ($pol -eq $script:PolicySnapshot) {
+                "実行ポリシー(CurrentUser): $pol （起動時と同じ。変えていない）"
+            } else {
+                "実行ポリシー(CurrentUser): $($script:PolicySnapshot) → $pol に変わっている"
+                "  → Set-ExecutionPolicy -ExecutionPolicy $($script:PolicySnapshot) -Scope CurrentUser で戻す"
+            }
         }
-
-    New-Step -Id '7-2-c' -Ch '7' -Title 'gitの証明書設定を戻す' -Kind change `
-        -Purpose '付録Cで http.sslBackend を設定した場合のみ' `
-        -Expect '設定が消えること（設定していなければエラーになるが問題ない）' `
-        -Show 'git config --global --unset http.sslBackend' `
-        -Cmd {
-            git config --global --unset http.sslBackend 2>&1
-            "現在の値: $(git config --global --get http.sslBackend 2>&1)"
-        }
-
-    New-Step -Id '7-2-d' -Ch '7' -Title '実行ポリシーを戻す（手動）' -Kind manual `
-        -Show @"
-  Get-ExecutionPolicy -List で確認し、CurrentUser を変えたなら Undefined に戻す:
-    Set-ExecutionPolicy -ExecutionPolicy Undefined -Scope CurrentUser
-"@ `
-        -Expect 'CurrentUser が実施前の値に戻る'
 
     New-Step -Id '7-3-a' -Ch '7' -Title '作業物を消す' -Kind change `
         -Purpose '記録の退避が済んでから実行する' `
@@ -968,7 +1131,7 @@ function Invoke-Step($Step) {
     $sec = [math]::Round($sw.Elapsed.TotalSeconds, 1)
     Write-Host ("  所要 {0} 秒" -f $sec) -ForegroundColor DarkGray
     if ($Step.TimeKey) { $script:Timings[$Step.TimeKey] = $sec }
-    $text = Remove-AnsiEscape ($raw | Out-String -Width 200)
+    $text = Hide-NetworkInfo (Remove-AnsiEscape ($raw | Out-String -Width 200))
     $script:Captured[$Step.Id] = $text
     $suggest = $null
     if ($Step.Hint) {
@@ -1060,6 +1223,7 @@ function Save-Record {
     $null = $sb.AppendLine("- 作業フォルダ: $script:WorkRoot")
     $null = $sb.AppendLine("- 対象章: $($script:TargetChapters -join ', ')")
     $null = $sb.AppendLine("- 記録した時点: $(Get-Date -Format 'HH:mm:ss')（1ステップごとに更新される）")
+    $null = $sb.AppendLine("- PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))　文字コード: CP$($script:ConsoleCodePage) / PYTHONIOENCODING=$($env:PYTHONIOENCODING)")
     $null = $sb.AppendLine()
     $null = $sb.AppendLine('## 判定一覧')
     $null = $sb.AppendLine()
@@ -1156,11 +1320,49 @@ $script:OutRoot = if ($OutDir) { $OutDir } else { $desktop }
 $script:MaterialRoot = if ($MaterialDir) { $MaterialDir } elseif ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $script:ChangedEnv = $false
 
+# 7-2-b で「開始時点に戻す」ために、いまのUser環境変数を控える。
+# 元から設定されている値を消してしまわないようにするため。実行する機材に
+# proxy や PIP_CERT が元から入っていることがあり、無条件に削除すると事故になる。
+$script:EnvNames = @('HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'PIP_CERT', 'NODE_EXTRA_CA_CERTS')
+$script:EnvSnapshot = @{}
+foreach ($n in $script:EnvNames) {
+    $script:EnvSnapshot[$n] = [Environment]::GetEnvironmentVariable($n, 'User')
+}
+# 記録から伏せるネットワーク情報を集める（プロキシのアドレス・除外リスト・PACのURL）
+$script:Redactions = @()
+foreach ($n in 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY') {
+    Add-Redaction ([Environment]::GetEnvironmentVariable($n)) '<プロキシ>'
+    Add-Redaction ([Environment]::GetEnvironmentVariable($n, 'User')) '<プロキシ>'
+    Add-Redaction ([Environment]::GetEnvironmentVariable($n, 'Machine')) '<プロキシ>'
+}
+Add-Redaction ([Environment]::GetEnvironmentVariable('NO_PROXY')) '<除外>'
+Add-Redaction ([Environment]::GetEnvironmentVariable('NO_PROXY', 'User')) '<除外>'
+try {
+    $ri = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' -ErrorAction Stop
+    Add-Redaction $ri.ProxyServer '<プロキシ>'
+    Add-Redaction $ri.AutoConfigURL '<PACのURL>'
+    Add-Redaction $ri.ProxyOverride '<除外>'
+} catch { }
+try {
+    $sp = [System.Net.WebRequest]::GetSystemWebProxy()
+    foreach ($h in 'https://api.anthropic.com', 'https://pypi.org', 'https://github.com') {
+        $g = $sp.GetProxy([Uri]$h)
+        if ($g -and $g.AbsoluteUri -ne ([Uri]$h).AbsoluteUri) {
+            Add-Redaction $g.Authority '<プロキシ>'
+            Add-Redaction $g.Host '<プロキシ>'
+        }
+    }
+} catch { }
+
+# 実行ポリシーは変えない前提だが、変わっていないことは確かめておく（7-2-bで報告する）
+$script:PolicySnapshot = try { (Get-ExecutionPolicy -Scope CurrentUser -ErrorAction Stop).ToString() } catch { '(取得できない)' }
+
 Set-StepList
 
 $targetChapters = if ($Chapter) { $Chapter | ForEach-Object { "$_" } } else { @('2', '3', '4', '5', '6', '7') }
 $script:TargetChapters = $targetChapters
 $steps = $script:Steps | Where-Object { $targetChapters -contains $_.Ch }
+if ($OnSite) { $steps = $steps | Where-Object { $_.Site -ne 'materials' } }
 $total = @($steps).Count
 
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -1183,6 +1385,13 @@ Write-Host @"
 "@ -ForegroundColor Gray
 
 Write-Host ''
+if ($OnSite -and -not $Auto) {
+    $stop = @($steps | Where-Object { $_.Kind -ne 'auto' }).Count
+    Write-Host '  -OnSite: 実環境リハーサル用' -ForegroundColor Yellow
+    Write-Host ("    ・貸与機でしか測れない{0}項目に絞った（社内で確定させる5-2〜5-9は対象外）" -f $total) -ForegroundColor DarkGray
+    Write-Host ("    ・止まるのは人が操作・判断する{0}箇所だけ。残りは確認を求めずに流す" -f $stop) -ForegroundColor DarkGray
+    Write-Host '    ・自動で流したステップの判定がNGになったときは、その場で止まる' -ForegroundColor DarkGray
+}
 if ($Auto) {
     Write-Host '  -Auto: 確認を求めずに実行する' -ForegroundColor Yellow
     Write-Host '    ・判定の根拠があるステップは自動で判定し、無いものは「自動」として記録する' -ForegroundColor DarkGray
@@ -1301,6 +1510,9 @@ foreach ($step in $steps) {
                 Write-Host ("    {0}" -f (Join-Path $script:OutRoot 'precheck-result-*.md')) -ForegroundColor White
                 Write-Host ("    {0}  （rehearsalブランチのクローンごと）" -f $script:MaterialRoot) -ForegroundColor White
                 Write-Host '  この削除は自動では行わない（講師自身のPCで実行した場合に本体を消してしまうため）' -ForegroundColor DarkGray
+                Write-Host ''
+                Write-Host '  記録には客先のネットワーク情報（プロキシのアドレス・除外リスト等）が含まれる。' -ForegroundColor Yellow
+                Write-Host '  持ち帰ったあとの取り扱いに注意し、社外・他案件へ出さない' -ForegroundColor Yellow
             }
         }
         if (-not $Auto) {
@@ -1325,17 +1537,22 @@ foreach ($step in $steps) {
             Write-Host '  スキップとして記録' -ForegroundColor DarkGray
             continue
         }
-        Add-Result $step '記録' $ans ''
-        Write-Host "  記録した: $ans" -ForegroundColor Green
+        if ($step.Id -eq '3-4-3') {
+            Add-Result $step '記録' '' 'URLは記録しない'
+            Write-Host '  受け取った（URLは記録しない）' -ForegroundColor Green
+        } else {
+            Add-Result $step '記録' $ans ''
+            Write-Host "  記録した: $ans" -ForegroundColor Green
+        }
 
-        # 3-4-3 だけは入力されたURLの到達性も測る
+        # 3-4-3 だけは入力されたURLの到達性も測る（URLは記録に残さない）
         if ($step.Id -eq '3-4-3' -and $ans -match '^https?://') {
             Write-Rule
             $code = (curl.exe -s -o NUL -w "%{http_code}" --max-time 20 $ans 2>&1)
-            Write-Host "  $ans => $code" -ForegroundColor White
+            Write-Host "  入力されたURL => $code" -ForegroundColor White
             Write-Rule
-            $script:Captured['3-4-3'] = "$ans => $code"
-            $script:Results[-1].Output = "$ans => $code"
+            $script:Captured['3-4-3'] = "共有リンクの到達性 => $code"
+            $script:Results[-1].Output = "共有リンクの到達性 => $code（URLは記録しない）"
         }
         continue
     }
@@ -1391,9 +1608,22 @@ foreach ($step in $steps) {
     }
 
     # ---- auto ステップ
-    if ($Auto) {
+    if ($Auto -or $OnSite) {
         $r = Invoke-Step $step
         Set-AutoVerdict $step $r
+        if ($OnSite -and -not $Auto -and $r.Suggest -eq 'NG') {
+            Write-Host ''
+            Write-Host '  判定がNGのため、ここで止まる' -ForegroundColor Red
+            $ans = Read-Key '[Enter]=続ける   [m]=メモを追記   [q]=中断'
+            if ($ans.ToLower() -eq 'q') { $script:Aborted = $true; break }
+            if ($ans.ToLower() -eq 'm') {
+                $memo = Read-Host '  メモ'
+                if ($memo) {
+                    $script:Results[-1].Memo = $memo
+                    try { Save-Record | Out-Null } catch { }
+                }
+            }
+        }
         continue
     }
     $ans = Read-Key '[Enter]=実行   [s]=スキップ   [q]=中断'
@@ -1457,7 +1687,7 @@ if ($script:Timings.Count -gt 0) { Show-Timings }
 
 if ($script:ChangedEnv) {
     Write-Host ''
-    Write-Host '  このセッションでプロキシの環境変数を設定した。7-2-bで削除すること' -ForegroundColor Red
+    Write-Host '  このセッションでプロキシの環境変数を設定した。7-2-bで開始時点の値に戻すこと' -ForegroundColor Red
 }
 
 try {

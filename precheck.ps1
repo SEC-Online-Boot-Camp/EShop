@@ -7,7 +7,10 @@
     管理者権限は不要。機材の状態を変えるステップは <設定変更> と表示され、
     既定はスキップで、明示的に y を押したときだけ実行する。
 
-    このブランチは公開リポジトリにあり、受講者からも参照できる（普通の git clone でも
+    このファイルの正本は教材リポジトリ側にあり、ここへは配備されたものが置かれる。
+    直すときは正本を直し、deploy-rehearsal.py で配備する。
+
+    配備先は公開リポジトリで、受講者からも参照できる（普通の git clone でも
     リモート追跡ブランチとして付いてくる）。受講者に伏せる情報はここに書かない。
 
     リハーサル機での取得（作業ツリーに main / No3 は展開されない）
@@ -71,6 +74,10 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+
+# 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
+# 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
+$script:ScriptVersion = '88f52705（2026-09-17 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # PowerShell 7 は [Console]::OutputEncoding が既定でUTF-8だが、Pythonはパイプ出力のとき
@@ -1271,6 +1278,7 @@ function Save-Record {
     $null = $sb.AppendLine("- 作業フォルダ: $script:WorkRoot")
     $null = $sb.AppendLine("- 対象章: $($script:TargetChapters -join ', ')")
     $null = $sb.AppendLine("- 記録した時点: $(Get-Date -Format 'HH:mm:ss')（1ステップごとに更新される）")
+    $null = $sb.AppendLine("- スクリプトの版: $script:ScriptVersion")
     $null = $sb.AppendLine("- PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))　文字コード: CP$($script:ConsoleCodePage) / PYTHONIOENCODING=$($env:PYTHONIOENCODING)")
     $null = $sb.AppendLine()
     $null = $sb.AppendLine('## 判定一覧')
@@ -1426,6 +1434,7 @@ Write-Host @"
   管理者権限は不要。<設定変更> と表示されるステップだけが機材の状態を変え、
   既定はスキップ、y を押したときだけ実行する（すべて7章で元へ戻す）。
 
+  スクリプトの版: $script:ScriptVersion
   対象章       : $($targetChapters -join ', ')  （全 $total ステップ）
   作業フォルダ : $script:WorkRoot
   テンプレート : $script:MaterialRoot\docs-template

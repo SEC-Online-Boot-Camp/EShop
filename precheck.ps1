@@ -13,7 +13,7 @@
     このファイルの正本は教材リポジトリ側にあり、ここへは配備されたものが置かれる。
     直すときは正本を直し、deploy-rehearsal.py で配備する。
 
-    配備先は公開リポジトリで、受講者からも参照できる（普通のgit cloneでも
+    配備先は公開リポジトリで、受講者からも参照できる（普通の git clone でも
     リモート追跡ブランチとして付いてくる）。受講者に伏せる情報はここに書かない。
 
     リハーサル機での取得（作業ツリーに main / No3 は展開されない）
@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '10923d04（2026-09-18 配備）'
+$script:ScriptVersion = '7bde6695（2026-09-18 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、

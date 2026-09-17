@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = 'f0da6522（2026-09-17 配備）'
+$script:ScriptVersion = 'ae9601b4（2026-09-17 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -1583,8 +1583,13 @@ function Get-DefaultBase {
     # rehearsal-<日付> の下に置かれているならそのフォルダを使い、置き場が
     # 日付違いで割れないようにする。フォルダ名で判定しているので、正本を教材
     # リポジトリから直接実行したとき（親が SW編）はマッチせず下の既定に落ちる。
-    $here = if ($PSScriptRoot) { Split-Path $PSScriptRoot -Parent } else { $null }
-    if ($here -and (Split-Path $here -Leaf) -match '^rehearsal-\d{8}$') { return $here }
+    # 実行ポリシー対策の起動（冒頭の起動方法3）では $PSScriptRoot が空になる。
+    # 貸与機ではこの経路がむしろ本命なので、$MaterialRoot と同じくカレントに
+    # フォールバックする。案内している手順は clone したフォルダへ Set-Location
+    # してから相対パスで呼ぶ形なので、カレントはスクリプトの置き場になる。
+    $here = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+    $parent = Split-Path $here -Parent
+    if ($parent -and (Split-Path $parent -Leaf) -match '^rehearsal-\d{8}$') { return $parent }
 
     # システムドライブ直下は標準ユーザーでもフォルダを作れる。エクスプローラーで
     # 見えるので消し忘れにくく、日付が入るので前回の残りとも区別できる。

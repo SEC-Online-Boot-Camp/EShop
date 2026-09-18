@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = 'd08b4cab（2026-09-18 配備）'
+$script:ScriptVersion = 'aa241895（2026-09-18 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -942,10 +942,17 @@ function Set-StepList {
         -Purpose 'アプリが起動して応答を返すことを確かめる。あわせてループバックの迂回も測る' `
         -Expect 'http://127.0.0.1:8000/docs が200を返す' `
         -Show @"
-  uvicorn app.main:app --reload
+  別のターミナルで起動したままにする場合は、仮想環境に入ってから実行する。
+  新しいターミナルは仮想環境に入っていないので、uvicorn を解決できない。
+
+    cd $script:SrcDir
+    .venv\Scripts\activate         （通らない場合は 4-3-07 の代替1行）
+    uvicorn app.main:app --reload
+
   → ブラウザで http://127.0.0.1:8000/docs を開く
 
   このスクリプトでは、サーバーを裏で起動して /docs のステータスを2通りで取り、最後に停止する。
+  仮想環境の python を絶対パスで呼ぶので、こちらは activate が要らない。
   ・プロキシを使わない（--noproxy '*'）… サーバーが起動して応答を返すか
   ・環境変数の経路をそのまま使う        … 127.0.0.1 がプロキシに投げられていないか
 
@@ -991,7 +998,7 @@ function Set-StepList {
                             "環境変数の経路では $via。127.0.0.1 がプロキシに投げられている可能性がある"
                             "  → NO_PROXYにループバックを足す案内が要る（3-5-b と 3-6-a を見る）"
                         }
-                        'ブラウザでも開いて画面を確認する（起動したままにしたい場合は手動で起動し直す）'
+                        'ブラウザでも開いて画面を確認する（起動したままにしたい場合は、上の手順で別のターミナルから起動し直す）'
                     } else {
                         'サーバーが応答を返していない。起動時の出力を見る:'
                         foreach ($f in $err, $log) {
@@ -1212,7 +1219,10 @@ function Set-StepList {
     New-Step -Id '4-5' -Ch '4' -Title 'Swagger UIでの注文確定（手動）' -Kind manual `
         -Purpose 'pytestは別DBを使うため、ecommerce.db の削除漏れはここでしか表面化しない' `
         -Show @"
-  1. src で uvicorn app.main:app --reload を起動し、http://127.0.0.1:8000/docs を開く
+  1. 別のターミナルで仮想環境に入ってから起動し、http://127.0.0.1:8000/docs を開く
+       cd $script:SrcDir
+       .venv\Scripts\activate      （通らない場合は 4-3-07 の代替1行）
+       uvicorn app.main:app --reload
   2. POST /auth/login を実行し、access_tokenを控える
      （ログイン情報は src/app/seed.py に定義されている。README.md には無い）
   3. 画面右上のAuthorizeにトークンを貼る

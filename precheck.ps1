@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = 'aa241895（2026-09-18 配備）'
+$script:ScriptVersion = 'adc9df56（2026-09-18 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -215,6 +215,15 @@ function Hide-NetworkInfo([string]$Text) {
     $Text = $Text -replace '(?<!\d)\d{1,3}\.\d{1,3}(\.\d{1,3})?\.\*', '<アドレス>'
     return $Text
 }
+
+# 別のターミナルで python 系を動かすときの整え方。実行ポリシーが Restricted の機材では
+# .venv\Scripts\activate（Activate.ps1）が弾かれるので、venv の exe を直接呼ぶ形を先に出す。
+# このスクリプト自身は venv の python を絶対パスで呼ぶため activate を必要としない。
+$script:VenvNote = @'
+  実行ポリシーが Restricted の機材では activate（Activate.ps1）が弾かれるため、
+  src へ移動して .venv\Scripts\ の実行ファイルを直接呼ぶ形が確実。
+  (.venv) の表示が要るときだけ、01-01手順書の代替1行を手打ちする（4-3-07 参照）。
+'@
 
 # 3-4-1（環境変数の経路 / curl）と 3-4-2（システム設定の経路 / Invoke-WebRequest）は
 # 同じホストを見る。3-6-a が両者の「落ち」件数を比べてケースを決めるため、片方にだけ
@@ -465,9 +474,16 @@ function Set-StepList {
                 if ($minor -lt 11) { Write-Mark 'NG' "3.11未満（3.$minor）。要件を満たさない"; $ng = $true }
                 else { Write-Mark 'OK' "3.${minor}で要件を満たす" }
             } else { $ng = $true }
+            # 版が返っていれば実体は入っている。WindowsApps 配下は Store版の置き場でもあり、
+            # 3.14.7 で venv・完全固定のpip・seed・pytest まで通った実測がある（2026-09-18）。
+            # 版を返さない場合だけが App Execution Alias のスタブ。
             if ($text -match 'WindowsApps') {
-                Write-Mark 'NG' 'Microsoft Storeのエイリアスを指している。実体のPythonが入っていない'
-                $ng = $true
+                if ($ng) {
+                    Write-Mark 'NG' 'Microsoft Storeのエイリアス（スタブ）。実体のPythonが入っていない'
+                } else {
+                    Write-Mark '保留' 'Store版のPython。動くが、自動更新で版が変わる。受講PCと版が揃うかを8章で確認する'
+                    return '保留'
+                }
             }
             if ($ng) { return 'NG' } else { return 'OK' }
         }
@@ -759,15 +775,36 @@ function Set-StepList {
             $add = @([Environment]::GetEnvironmentVariable('PATH', 'Machine'), [Environment]::GetEnvironmentVariable('PATH', 'User')) -ne $null
             $env:PATH = (@($env:PATH.TrimEnd(';')) + $add) -join ';'
             'このプロセスのPATHにMachineとUserの分を足した'
+            # 公式インストーラが User PATH を更新しないことがある（「not in your PATH」と
+            # 自分で案内してくる）。そのときは Machine/User を読み直しても拾えないので、
+            # 既知の置き場を足す。受講者にも同じ現象が出るため、11章で01-02へPATH追加の
+            # 手順を入れる判断材料になる。
+            $bin = Join-Path $env:USERPROFILE '.local\bin'
+            if ((Test-Path $bin) -and (($env:PATH -split ';') -notcontains $bin)) {
+                $env:PATH = "$bin;$env:PATH"
+                "インストーラがUser PATHに入れていないため、このプロセスに足した: $bin"
+            }
         } `
         -SkipImpact 'スキップすると 4-3-02〜4-3-04（版の記録・ログイン・VS Code拡張）が実施できない'
 
     New-Step -Id '4-3-02' -Ch '4' -Title 'Claude Codeの版' -Kind auto `
         -Expect '版を記録する（本番と同一かを12章で照合する）' `
-        -Cmd { claude --version } `
+        -Show 'claude --version（解決できない場合は既知の置き場も見る）' `
+        -Cmd {
+            $v = try { claude --version 2>&1 } catch { $null }
+            if ($v) { $v } else { 'claudeコマンドを解決できない' }
+            $exe = Join-Path $env:USERPROFILE '.local\bin\claude.exe'
+            if (Test-Path $exe) { "実体あり: $exe" }
+        } `
         -Hint {
             param($text)
             if ($text -match '(?m)^\s*\d+\.\d+') { Write-Mark 'OK' '版を取得できた'; return 'OK' }
+            if ($text -match '実体あり:') {
+                Write-Mark '保留' '導入されているがPATHから解決できない。受講者にも同じ現象が出る'
+                Write-Host '        インストーラがUser PATHを更新しない機材。11章で01-02にPATH追加の手順を入れる' -ForegroundColor Yellow
+                Write-Host '        このターミナルに足す: $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"' -ForegroundColor Yellow
+                return '保留'
+            }
             Write-Mark 'NG' 'claudeを解決できない。導入に失敗したか、PATHが通っていない'
             Write-Host '        4-3-01 をスキップしたならここもNGでよい。実行したなら新しいターミナルで試す' -ForegroundColor Red
             return 'NG'
@@ -885,6 +922,16 @@ function Set-StepList {
                 Write-Mark 'NG' 'python/pytest が .venv 配下を指していない。ここが揃わないと以降が別環境になる'
                 return 'NG'
             }
+            # -ExecutionPolicy Bypass で起動していると（VS Codeの統合ターミナルも既定でそうなる
+            # ことがある）Process スコープが効いて Activate.ps1 が通ってしまう。受講者は素の
+            # ターミナルなので、この結果をそのまま手順書へ反映できない。
+            $pol = $script:Captured['2-1-c']
+            if ($pol -match '(?m)^\s*Process\s+(Bypass|Unrestricted)') {
+                Write-Mark '保留' 'Process スコープが Bypass のため、activateの可否は受講者の環境を表さない'
+                Write-Host '        受講者は素のターミナルで実行する。2-1-c の LocalMachine と CurrentUser で判断する' -ForegroundColor Yellow
+                Write-Host '        GPOの縛りが無ければ Set-ExecutionPolicy -Scope CurrentUser が効くので、01-01手順書の2段目は残す' -ForegroundColor Yellow
+                return '保留'
+            }
             return 'OK'
         }
 
@@ -942,13 +989,12 @@ function Set-StepList {
         -Purpose 'アプリが起動して応答を返すことを確かめる。あわせてループバックの迂回も測る' `
         -Expect 'http://127.0.0.1:8000/docs が200を返す' `
         -Show @"
-  別のターミナルで起動したままにする場合は、仮想環境に入ってから実行する。
-  新しいターミナルは仮想環境に入っていないので、uvicorn を解決できない。
+  別のターミナルで起動したままにする場合:
 
     cd $script:SrcDir
-    .venv\Scripts\activate         （通らない場合は 4-3-07 の代替1行）
-    uvicorn app.main:app --reload
+    .venv\Scripts\uvicorn.exe app.main:app --reload
 
+$script:VenvNote
   → ブラウザで http://127.0.0.1:8000/docs を開く
 
   このスクリプトでは、サーバーを裏で起動して /docs のステータスを2通りで取り、最後に停止する。
@@ -995,8 +1041,19 @@ function Set-StepList {
                         if ($via -eq '200') {
                             "環境変数の経路でも200。127.0.0.1 はプロキシに投げられていない"
                         } else {
-                            "環境変数の経路では $via。127.0.0.1 がプロキシに投げられている可能性がある"
-                            "  → NO_PROXYにループバックを足す案内が要る（3-5-b と 3-6-a を見る）"
+                            "環境変数の経路では $via。127.0.0.1 がプロキシに投げられている"
+                            # ブラウザはシステム設定の経路を使う。3-5-b が正本なので、そこを見て
+                            # 言い分ける。3-6-a のケース判定は3-4（外部ホスト）だけを見ているため、
+                            # ここで「案内が要る」と言い切ると記録の中で食い違う。
+                            $bp = $script:Captured['3-5-b']
+                            if ($bp -match 'True') {
+                                '  → ブラウザは影響を受けない（3-5-b=True）。4-5 の確認は通る'
+                                '  → 環境変数の経路でループバックに繋ぐ手順は演習に無いため、受講者への案内は不要'
+                            } elseif ($bp -match 'False') {
+                                '  → ブラウザも迂回されない（3-5-b=False）。NO_PROXYにループバックを足す案内が要る'
+                            } else {
+                                '  → 3-5-b を実施していないため、ブラウザ側への影響は判定できない'
+                            }
                         }
                         'ブラウザでも開いて画面を確認する（起動したままにしたい場合は、上の手順で別のターミナルから起動し直す）'
                     } else {
@@ -1136,11 +1193,16 @@ function Set-StepList {
   03-01の手順0と同じ場所・同じ書き方で見る。docsはEShop直下にあるため src からは ..\docs。
 "@ `
         -Cmd {
+            # Select-Object で出すと、PowerShell の表組みが1つ目のオブジェクトで列を決めるため、
+            # FullName,Length のあとの Name,Length が空欄になり、Hint がファイル名を見つけられない。
+            # 文字列にして切り離す。
             Invoke-InSrc {
-                "src: "
-                Get-ChildItem 'app\coupon.py' -ErrorAction SilentlyContinue | Select-Object FullName, Length
-                "src から ..\docs: "
-                Get-ChildItem '..\docs' -ErrorAction SilentlyContinue | Select-Object Name, Length
+                'src:'
+                Get-ChildItem 'app\coupon.py' -ErrorAction SilentlyContinue |
+                    ForEach-Object { "  {0}  {1} bytes" -f $_.Name, $_.Length }
+                'src から ..\docs:'
+                Get-ChildItem '..\docs' -ErrorAction SilentlyContinue |
+                    ForEach-Object { "  {0}  {1} bytes" -f $_.Name, $_.Length }
             }
         } `
         -Hint {
@@ -1219,10 +1281,10 @@ function Set-StepList {
     New-Step -Id '4-5' -Ch '4' -Title 'Swagger UIでの注文確定（手動）' -Kind manual `
         -Purpose 'pytestは別DBを使うため、ecommerce.db の削除漏れはここでしか表面化しない' `
         -Show @"
-  1. 別のターミナルで仮想環境に入ってから起動し、http://127.0.0.1:8000/docs を開く
+  1. 別のターミナルで起動し、http://127.0.0.1:8000/docs を開く
        cd $script:SrcDir
-       .venv\Scripts\activate      （通らない場合は 4-3-07 の代替1行）
-       uvicorn app.main:app --reload
+       .venv\Scripts\uvicorn.exe app.main:app --reload
+$script:VenvNote
   2. POST /auth/login を実行し、access_tokenを控える
      （ログイン情報は src/app/seed.py に定義されている。README.md には無い）
   3. 画面右上のAuthorizeにトークンを貼る
@@ -1237,7 +1299,9 @@ function Set-StepList {
     New-Step -Id '4-4-06' -Ch '4' -Title '生成したテストの実行（手動）' -Kind manual `
         -Show @"
   03-02 の手順でAIに tests/test_coupon.py を生成させ、次を実行する:
-    pytest tests/test_coupon.py -v --disable-warnings
+    cd $script:SrcDir
+    .venv\Scripts\pytest.exe tests/test_coupon.py -v --disable-warnings
+$script:VenvNote
 "@ `
         -Expect 'テストが実行できること（FAILEDは想定内）'
 

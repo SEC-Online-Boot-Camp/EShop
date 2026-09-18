@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '40b6c2f7（2026-09-18 配備）'
+$script:ScriptVersion = '29cfeec1（2026-09-18 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -375,9 +375,16 @@ function Set-StepList {
     New-Step -Id '2-1-a' -Ch '2' -Title 'Windowsの版' -Kind auto `
         -Purpose '受講PCのOSと版を記録する（本番機と同じかを後で照合する）' `
         -Expect '版とビルドを記録する' `
+        -Show 'レジストリのCurrentVersionから版・ビルド・UBRを読む（buildで世代も判定する）' `
         -Cmd {
-            Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' |
+            $v = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' |
                 Select-Object ProductName, DisplayVersion, CurrentBuild, UBR
+            $v
+            # ProductName は Windows 11 でも「Windows 10 Pro」と返る。記録を後から読む人が
+            # 誤読するため、build から判定した結果を書いておく（22000以上が Windows 11）。
+            $b = 0
+            [void][int]::TryParse("$($v.CurrentBuild)", [ref]$b)
+            "世代: $(if ($b -ge 22000) { 'Windows 11' } else { 'Windows 10' })（build $b で判定。ProductNameは11でも10と返る）"
         }
 
     New-Step -Id '2-1-c' -Ch '2' -Title 'PowerShellの実行ポリシー' -Kind auto `
@@ -682,11 +689,19 @@ function Set-StepList {
     New-Step -Id '3-4-2' -Ch '3' -Title '到達性の確認（システム設定の経路 / ブラウザ・VS Code相当）' -Kind auto `
         -Purpose '3-4-1と食い違ったら、それが原因の切り分けになる' `
         -Expect 'curlと同じ結果か。違う場合は下に出る判定と参考を読む' `
+        -Show '3-4-1と同じ10ホストへ Invoke-WebRequest で接続し、HTTPステータスを見る' `
         -Cmd {
-            foreach ($u in $script:ReachHosts) {
-                try { "{0,-45} {1}" -f $u, (Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 20).StatusCode }
-                catch { "{0,-45} {1}" -f $u, $_.Exception.Message }
-            }
+            # PowerShell 5.1 の Invoke-WebRequest は進捗バーの描画で極端に遅くなる。
+            # 実測で1ホストあたり 31.44秒 → 1.99秒。10ホストで1分半以上の差になり、
+            # 画面共有では無音の待ちになるため、この間だけ止める。
+            $prev = $ProgressPreference
+            $ProgressPreference = 'SilentlyContinue'
+            try {
+                foreach ($u in $script:ReachHosts) {
+                    try { "{0,-45} {1}" -f $u, (Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 20).StatusCode }
+                    catch { "{0,-45} {1}" -f $u, $_.Exception.Message }
+                }
+            } finally { $ProgressPreference = $prev }
         } `
         -Hint {
             param($text)
@@ -868,7 +883,9 @@ function Set-StepList {
             Push-Location $script:WorkRoot
             try {
                 if (Test-Path $script:RepoDir) { "既に存在するためcloneをスキップ: $($script:RepoDir)"; return }
-                git clone https://github.com/SEC-Online-Boot-Camp/EShop.git 2>&1
+                # git は進捗を標準エラーに書く。2>&1 のままだと ErrorRecord になり、
+                # 成功しているのに画面へ赤いブロックが出て手が止まる。文字列にする。
+                git clone https://github.com/SEC-Online-Boot-Camp/EShop.git 2>&1 | ForEach-Object { "$_" }
             } finally { Pop-Location }
         } `
         -Hint {
@@ -922,7 +939,9 @@ function Set-StepList {
                     '代替1行を適用した（01-01手順書の記載どおり）'
                 }
                 "python => $((Get-Command python -ErrorAction SilentlyContinue).Source)"
-                "pytest => $((Get-Command pytest -ErrorAction SilentlyContinue).Source)"
+                # pytest が入るのは次の 4-3-08。ここで Get-Command を引くと、グローバルに
+                # pytest がある機材では venv の外のパスを拾ってしまう。確認は 4-3-08 に任せる。
+                'pytest => 4-3-08 のpip installで入るため、ここでは確認しない'
             }
         } `
         -Hint {
@@ -967,7 +986,17 @@ function Set-StepList {
   precheckでは --retries 1 を足す。pipの既定は5回再試行するため、到達できない機材だと
   十数分無反応になる。成功する機材では所要時間は変わらないので、6章の実測にも使える。
 "@ `
-        -Cmd { Invoke-InSrc { & (Get-VenvPython) -m pip install --retries 1 -r requirements.txt 2>&1 } } `
+        -Cmd {
+            Invoke-InSrc {
+                & (Get-VenvPython) -m pip install --retries 1 -r requirements.txt 2>&1
+                # 4-3-07 の時点では未導入なので、入ったここで確認する（事前確認書 3-1）。
+                # .venv の外を指していると、以降のテストが別環境で走る。
+                $pt = (Get-Command pytest -ErrorAction SilentlyContinue).Source
+                if (-not $pt) { 'pytest => 解決できない。.venv が有効になっていない可能性がある' }
+                elseif ($pt -notlike '*\.venv\*') { "pytest => $pt （.venv の外を指している。別環境のpytestが優先されている）" }
+                else { "pytest => $pt" }
+            }
+        } `
         -Hint {
             param($text)
             if ($text -match '仮想環境が無い') {
@@ -1194,8 +1223,8 @@ $script:VenvNote
         -Show 'git fetch origin ; git switch No3 ; git branch --show-current' `
         -Cmd {
             Invoke-InRepo {
-                git fetch origin 2>&1
-                git switch No3 2>&1
+                git fetch origin 2>&1 | ForEach-Object { "$_" }
+                git switch No3 2>&1 | ForEach-Object { "$_" }
                 "current = $(git branch --show-current)"
             }
         } `
@@ -1407,7 +1436,7 @@ $script:VenvNote
         -Cmd {
             Invoke-InRepo {
                 $enc = if ($script:ConsoleCodePage -eq 65001) { 'UTF-8' } else { "CP$($script:ConsoleCodePage)" }
-                $all = @(git status --porcelain 2>&1 | Where-Object { $_ })
+                $all = @(git status --porcelain 2>&1 | ForEach-Object { "$_" } | Where-Object { $_ })
                 $tracked = @($all | Where-Object { $_ -notmatch '^\?\?' })
                 $untracked = @($all | Where-Object { $_ -match '^\?\?' })
                 '--- 追跡ファイルの変更（.env・.gitignore・CLAUDE.md など）---'
@@ -1415,20 +1444,20 @@ $script:VenvNote
                 '--- 未追跡ファイル（演習の副産物。クローン削除で消える）---'
                 if ($untracked.Count -eq 0) { '（なし）' } else { $untracked }
                 '--- .env / .gitignore の差分 ---'
-                $df = @(git diff --name-only -- .env .gitignore 2>&1 | Where-Object { $_ })
+                $df = @(git diff --name-only -- .env .gitignore 2>&1 | ForEach-Object { "$_" } | Where-Object { $_ })
                 if ($df.Count -eq 0) { '（差分なし）' } else { $df }
                 '--- 未pushのコミット ---'
                 $up = (git rev-parse --abbrev-ref '@{u}' 2>&1)
                 $log = @()
                 if ($LASTEXITCODE -eq 0 -and $up -notmatch 'fatal') {
                     "追跡ブランチ: $up"
-                    $log = @(git -c i18n.logOutputEncoding=$enc log '@{u}..HEAD' --oneline 2>&1 | Where-Object { $_ })
+                    $log = @(git -c i18n.logOutputEncoding=$enc log '@{u}..HEAD' --oneline 2>&1 | ForEach-Object { "$_" } | Where-Object { $_ })
                     if ($log.Count -eq 0) { '（なし）' } else { $log }
                 } else {
                     '追跡ブランチが無い（push先が設定されていない）'
                 }
                 '--- push先 ---'
-                git remote -v 2>&1
+                git remote -v 2>&1 | ForEach-Object { "$_" }
                 ''
                 if ($tracked.Count -gt 0 -or $log.Count -gt 0) { '結果: 追跡ファイルの変更または未pushのコミットがある' }
                 else { '結果: 追跡ファイルの変更なし・未pushなし' }
@@ -1472,6 +1501,9 @@ $script:VenvNote
 
   変数ごとに「変更なし」「戻した」「削除した」を表示する。
   値そのものは表示しない（記録に客先のネットワーク情報を残さないため）。
+
+  User PATH は戻さない。リハーサル中にインストーラが正しく足した分まで消してしまうため、
+  増えた項目を報告するだけにする（消すかは人が判断する）。
 "@ `
         -Cmd {
             $changed = 0
@@ -1489,6 +1521,18 @@ $script:VenvNote
                 else { "削除した: $n（起動時は未設定だった）" }
             }
             if ($changed -eq 0) { 'このリハーサルでは環境変数を変えていない' }
+            ''
+            # 手で足したPATH（4-3-02 の対処など）は上の5つに入らないため残る。自動では消さない。
+            $nowPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+            $wasItems = @($script:UserPathSnapshot -split ';')
+            $added = @(($nowPath -split ';') | Where-Object { $_ } | Where-Object { $wasItems -notcontains $_ })
+            if ($added.Count -gt 0) {
+                "User PATH に増えた項目が $($added.Count) 件ある（自動では消さない）:"
+                $added | ForEach-Object { "  $_" }
+                '  → 機材に残していいものかを判断し、必要なら手で削除する'
+            } else {
+                'User PATH は起動時から変わっていない'
+            }
             ''
             '※ 4-3-07 がこのプロセスのPATHとVIRTUAL_ENVを書き換えているが、これは'
             '   プロセス内だけの変更で、ターミナルを閉じれば消える（機材には残らない）。'
@@ -1685,10 +1729,10 @@ function Save-Record {
     $null = $sb.AppendLine("- 実施者: $env:USERNAME")
     $null = $sb.AppendLine("- 作業フォルダ: $script:WorkRoot")
     $null = $sb.AppendLine("- 対象章: $($script:TargetChapters -join ', ')")
-    # 中断すると対象章の途中で記録が終わる。その章が0件だったのか中断したのかを見分ける
-    if ($script:Aborted) {
-        $null = $sb.AppendLine("- **途中で中断した**（全 $($script:TotalSteps)ステップ中 $($script:Results.Count)ステップを実施）")
-    }
+    # 記録が途中で終わったのか、その章が対象外だったのかを、読んだだけで分かるようにする。
+    # Ctrl+Cやウィンドウを閉じた場合は Aborted が立たないので、進捗は常に出す。
+    $null = $sb.AppendLine("- 進捗: 全 $($script:TotalSteps)ステップ中 $($script:Results.Count)ステップを実施")
+    if ($script:Aborted) { $null = $sb.AppendLine('- **[q]で途中で中断した**') }
     $null = $sb.AppendLine("- 記録した時点: $(Get-Date -Format 'HH:mm:ss')（1ステップごとに更新される）")
     $null = $sb.AppendLine("- スクリプトの版: $script:ScriptVersion")
     $null = $sb.AppendLine("- PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))　文字コード: CP$($script:ConsoleCodePage) / PYTHONIOENCODING=$($env:PYTHONIOENCODING)")
@@ -1841,6 +1885,9 @@ $script:MaterialRoot = if ($MaterialDir) { $MaterialDir } elseif ($PSScriptRoot)
 # 元から設定されている値を消してしまわないようにするため。実行する機材に
 # proxy や PIP_CERT が元から入っていることがあり、無条件に削除すると事故になる。
 $script:EnvNames = @('HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'PIP_CERT', 'NODE_EXTRA_CA_CERTS')
+# PATH は $script:EnvNames に入れない。丸ごと戻すと、リハーサル中にインストーラが正しく
+# 足した分まで消してしまう。7-2-b では増えた項目の報告だけを行う。
+$script:UserPathSnapshot = [Environment]::GetEnvironmentVariable('PATH', 'User')
 $script:EnvSnapshot = @{}
 foreach ($n in $script:EnvNames) {
     $script:EnvSnapshot[$n] = [Environment]::GetEnvironmentVariable($n, 'User')
@@ -2105,9 +2152,11 @@ foreach ($step in $steps) {
             Write-Rule
             $code = (curl.exe -s -o NUL -w "%{http_code}" --max-time 20 $ans 2>&1)
             Write-Host "  共有リンクの到達性 => $code" -ForegroundColor White
+            Write-Host '  403や401は「到達はしている」だけ。パスワード付きリンクの未認証でも返る' -ForegroundColor DarkGray
+            Write-Host '  開けるか・md/PDF/xlsxが表示できるか・ダウンロードできるかは 8-3 で別に確認する' -ForegroundColor DarkGray
             Write-Rule
-            $script:Captured['3-4-3'] = "共有リンクの到達性 => $code"
-            $script:Results[-1].Output = "共有リンクの到達性 => $code（URLは記録しない）"
+            $script:Captured['3-4-3'] = "共有リンクの到達性 => $code（403や401は到達のみ）"
+            $script:Results[-1].Output = "共有リンクの到達性 => $code（URLは記録しない。403や401は到達のみで、開けるかは8-3で確認する）"
             # Add-Result のときの書き出しは既に終わっているため、書き足した分をここで反映する。
             # そうしないと、この直後に中断したときに到達性の結果だけ記録から落ちる。
             try { Save-Record | Out-Null } catch { }

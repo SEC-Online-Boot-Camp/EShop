@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '7bde6695（2026-09-18 配備）'
+$script:ScriptVersion = '51889de9（2026-09-18 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -120,11 +120,23 @@ function Get-MarkLabel([string]$Mark) {
     switch ($Mark) { 'OK' { 'OK  ' } 'NG' { 'NG  ' } default { $Mark } }
 }
 
+function Get-MarkColor([string]$Mark) {
+    # 画面共有で読めるように、彩度ではなく明度で差をつける。Magenta は Campbell で
+    # コントラスト 3.2:1 しかなく、Teams の圧縮でも最初に潰れるため使わない。
+    switch ($Mark) {
+        'OK' { 'Green' }
+        'NG' { 'Red' }
+        '保留' { 'Yellow' }
+        '参考' { 'Gray' }
+        '未実施' { 'Yellow' }    # 人の操作が要る。まとめの強調ブロックと色を揃える
+        default { 'DarkGray' }   # 自動・スキップ・記録・確認
+    }
+}
+
 function Write-Mark([string]$Mark, [string]$Text) {
     # 判定を行頭に出す。色が落ちる記録（rehearsal-check.txt）でも、読み飛ばしてよい行と
     # ここで止まる行が見分けられるようにするため。幅を揃えて後続の説明行とぶら下げを合わせる。
-    $color = switch ($Mark) { 'OK' { 'Magenta' } 'NG' { 'Red' } '保留' { 'Yellow' } default { 'DarkGray' } }
-    Write-Host ('  {0}  {1}' -f (Get-MarkLabel $Mark), $Text) -ForegroundColor $color
+    Write-Host ('  {0}  {1}' -f (Get-MarkLabel $Mark), $Text) -ForegroundColor (Get-MarkColor $Mark)
 }
 
 function Remove-AnsiEscape([string]$Text) {
@@ -204,6 +216,25 @@ function Hide-NetworkInfo([string]$Text) {
     return $Text
 }
 
+# 3-4-1（環境変数の経路 / curl）と 3-4-2（システム設定の経路 / Invoke-WebRequest）は
+# 同じホストを見る。3-6-a が両者の「落ち」件数を比べてケースを決めるため、片方にだけ
+# 足すと、そのホストが許可リストに無いだけで「環境変数の経路が通らない」と誤判定する。
+# 増やすときは必ずここだけを直す。
+$script:ReachHosts = @(
+    'https://claude.ai'
+    'https://claude.com'
+    'https://platform.claude.com'
+    'https://api.anthropic.com'
+    'https://downloads.claude.ai'
+    'https://github.com'
+    'https://pypi.org/simple/'
+    'https://files.pythonhosted.org'
+    'https://marketplace.visualstudio.com'
+    # 拡張のCDNは発行者名のサブドメイン（anthropic.claude-code の anthropic）。
+    # marketplaceだけ通ってCDNが落ちると「一覧は見えるのに導入で失敗する」になる。
+    'https://anthropic.gallerycdn.vsassets.io/'
+)
+
 function Get-Reachability([string]$Text) {
     # 3-4-1 / 3-4-2 の出力から、到達できた数と落ちた数を数える
     $ok = 0; $bad = 0; $auth = $false
@@ -272,6 +303,12 @@ function New-Step {
 
 function Add-Result {
     param($Step, [string]$Verdict, [string]$Output, [string]$Memo, [double]$Seconds = -1)
+    # 人が打ち込んだ観測結果（manualステップ）とメモは Invoke-Step を通らないので、
+    # ここで伏せ字を当てる。ログイン失敗の文面にはプロキシのホスト名やPACのURLが出る。
+    # コマンド出力は Invoke-Step で当て済みだが、置き換えたあとの <プロキシ> 等は
+    # 伏せ字の対象にならないため、二重に通しても変わらない。
+    $Output = Hide-NetworkInfo $Output
+    $Memo = Hide-NetworkInfo $Memo
     $script:Results += [pscustomobject]@{
         Id = $Step.Id; Ch = $Step.Ch; Title = $Step.Title; Kind = $Step.Kind
         Command = (Get-ShowText $Step)
@@ -448,7 +485,7 @@ function Set-StepList {
 
     New-Step -Id '2-2-d' -Ch '2' -Title 'PowerShellの版' -Kind auto `
         -Purpose '5.1と7ではプロキシの読み先が違う（3-1）' `
-        -Expect 'VS Codeの既定ターミナルがどちらかを記録する' `
+        -Expect 'このスクリプトを起動したシェルの版。受講者はVS Codeの統合ターミナルで操作するため、そこから起動する' `
         -Cmd { $PSVersionTable.PSVersion; "PSEdition = $($PSVersionTable.PSEdition)" }
 
     New-Step -Id '2-2-e' -Ch '2' -Title 'Excelの有無' -Kind auto `
@@ -560,32 +597,18 @@ function Set-StepList {
             return 'OK'
         }
 
-    New-Step -Id '3-2-4' -Ch '3' -Title 'アドレスや設定値が必要なとき（手元で実行する）' -Kind info `
-        -Purpose '手順書に載せる実アドレスが必要な場合の確認方法。記録には残さない' `
+    New-Step -Id '3-2-4' -Ch '3' -Title 'アドレスや設定値が必要なとき（先方に確認していただく）' -Kind info `
+        -Purpose '手順書に載せる実アドレスは講師が受け取らない。先方に記入していただく' `
         -Show @"
-  プロキシのアドレス・PACの中身・除外リストは、**この記録に残さない**。
-  客先のネットワーク情報であり、持ち帰る記録に含めないためである。
+  プロキシのアドレス・PACの中身・除外リストは、**この場では扱わない**。
+  客先のネットワーク情報であり、記録にも画面共有にも出さないためである。
 
   実値が必要になるのは、3-6-aの判定がケースB/Cのときだけ（受講者向け手順書に
-  載せるアドレス）。そのときは、講師が手元の端末で次を実行して控える。
+  載せるアドレス）。その場合も講師は値を受け取らない。手順書にはプレースホルダ
+  （<プロキシのアドレス:ポート> など）を書き、実値の記入は先方にお願いする。
 
-    # 環境変数の値
-    'HTTP_PROXY','HTTPS_PROXY','NO_PROXY' |
-      ForEach-Object { "{0} = {1}" -f `$_, [Environment]::GetEnvironmentVariable(`$_) }
-
-    # 宛先ごとの実効プロキシ（アドレス入り）
-    `$p = [System.Net.WebRequest]::GetSystemWebProxy()
-    `$p.GetProxy([Uri]'https://api.anthropic.com')
-
-    # レジストリ（ProxyServer・AutoConfigURL）
-    Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' |
-      Select-Object ProxyServer, ProxyOverride, AutoConfigURL
-
-    # PACの中身（PowerShell 7 のみ。5.1 はブラウザでURLを開く）
-    Invoke-WebRequest -Uri '<AutoConfigURLの値>' -UseBasicParsing -NoProxy |
-      Select-Object -ExpandProperty Content
-
-  控えた値は手順書へ直接書き、この記録ファイルには書かない。
+  このステップではコマンドを実行しない。確認に使うコマンドが必要になったときは、
+  講師から別途お渡しする。
 "@
 
     New-Step -Id '3-3' -Ch '3' -Title '判定基準の確認（読むだけ）' -Kind info `
@@ -602,7 +625,7 @@ function Set-StepList {
         -Purpose 'pip・git・Claude Codeと同じ経路で確かめる' `
         -Expect '各ホストのHTTPステータス。3-3の表で判定する' `
         -Cmd {
-            'https://claude.ai', 'https://claude.com', 'https://platform.claude.com', 'https://api.anthropic.com', 'https://downloads.claude.ai', 'https://github.com', 'https://pypi.org/simple/', 'https://files.pythonhosted.org', 'https://marketplace.visualstudio.com' |
+            $script:ReachHosts |
                 ForEach-Object { "{0,-45} {1}" -f $_, (curl.exe -s -o NUL -w "%{http_code}" --max-time 20 $_ 2>&1) }
         } `
         -Hint {
@@ -621,7 +644,7 @@ function Set-StepList {
         -Purpose '3-4-1と食い違ったら、それが原因の切り分けになる' `
         -Expect 'curlと同じ結果か。違う場合は下に出る判定と参考を読む' `
         -Cmd {
-            foreach ($u in 'https://claude.ai', 'https://api.anthropic.com', 'https://github.com', 'https://pypi.org/simple/', 'https://marketplace.visualstudio.com') {
+            foreach ($u in $script:ReachHosts) {
                 try { "{0,-45} {1}" -f $u, (Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 20).StatusCode }
                 catch { "{0,-45} {1}" -f $u, $_.Exception.Message }
             }
@@ -718,7 +741,7 @@ function Set-StepList {
         -Purpose 'ここから先はファイルを作る。場所を先に確認する' `
         -Show '実行時に表示する'
 
-    New-Step -Id '4-3-01' -Ch '4' -Title 'Claude Codeのインストール' -Kind change `
+    New-Step -Id '4-3-01' -Ch '4' -Title 'Claude Codeのインストール' -Kind change -TimeKey 'install' `
         -Purpose '受講者も同じコマンドを実行する（01-02）' `
         -Expect 'スクリプトの取得と実体のダウンロードの両方が通る' `
         -Show @"
@@ -817,7 +840,10 @@ function Set-StepList {
         -Show @"
   .venv\Scripts\activate
   （失敗する場合の代替1行 = 01-01手順書に記載のもの）
-  `$env:VIRTUAL_ENV="`$PWD\.venv"; `$env:PATH="`$env:VIRTUAL_ENV\Scripts;`$env:PATH"
+  `$env:VIRTUAL_ENV="`$PWD\.venv"; `$env:PATH="`$env:VIRTUAL_ENV\Scripts;`$env:PATH"; function prompt {"(.venv) PS `$PWD> "}
+
+  受講者は末尾の function prompt が出す (.venv) の表示で成功を判断する。
+  ここでは python と pytest の解決先で判定するため、prompt は変えない。
 "@ `
         -Cmd {
             Invoke-InSrc {
@@ -842,7 +868,18 @@ function Set-StepList {
         -Hint {
             param($text)
             if ($text -match 'activate（\.ps1）は失敗した') {
-                Write-Mark '参考' '手順書は代替1行だけに絞る（11章へ記録）'
+                # 結論は2-1-cで見たグループポリシーの有無で変わる。縛りが無ければ
+                # Set-ExecutionPolicy -Scope CurrentUser が効くので、01-01手順書の2段目を
+                # 消してはいけない。消すと受講者はターミナルを開くたびに代替1行を打つことになる。
+                $pol = $script:Captured['2-1-c']
+                if (-not $pol) {
+                    Write-Mark '参考' '2-1-cを実施していないため、手順書を絞れるかは判定できない（11章へ記録）'
+                } elseif ($pol -match '(?m)^\s*(MachinePolicy|UserPolicy)\s+(?!Undefined)\S+') {
+                    Write-Mark '参考' 'グループポリシーで縛られている。01-01手順書は代替1行だけに絞る（11章へ記録）'
+                } else {
+                    Write-Mark '参考' 'グループポリシーの縛りは無い。Set-ExecutionPolicy -Scope CurrentUser で直るため、'
+                    Write-Host '        01-01手順書の2段目は残す。代替1行は3段目のままにする（11章へ記録）' -ForegroundColor DarkGray
+                }
             }
             if ($text -notmatch '\.venv') {
                 Write-Mark 'NG' 'python/pytest が .venv 配下を指していない。ここが揃わないと以降が別環境になる'
@@ -1019,7 +1056,29 @@ function Set-StepList {
             return 'NG'
         }
 
-    New-Step -Id '4-4-01' -Ch '4' -Title 'No.2成果物の配置（講師が実施）' -Kind change `
+    New-Step -Id '4-3-12' -Ch '4' -Title 'VS Code拡張の版' -Kind auto `
+        -Purpose '5-8（拡張でも同じか）は拡張の版に依存する。CLIだけ12章で照合できて拡張ができないのは非対称' `
+        -Expect 'Claude Codeの拡張の版を記録する（本番と同一かを12章で照合する）' `
+        -Show 'code --list-extensions --show-versions' `
+        -Cmd { code --list-extensions --show-versions 2>&1 } `
+        -Hint {
+            param($text)
+            if ($text -match '(?i)not recognized|認識されません|CommandNotFound') {
+                # 2-2-a と同じ原因（PATHに追加せずにVS Codeを入れた）。機材の不具合ではなく、
+                # 版は拡張ビューから手でも取れるので、2-2-a と同じ 保留 にそろえる。
+                Write-Mark '保留' 'codeがPATHに無い（2-2-aと同じ）。講座ではcodeコマンドを使わないため実害は無い'
+                Write-Host '        版はVS Codeの拡張ビューで読める。手で記録して12章の照合に使う' -ForegroundColor Yellow
+                return '保留'
+            }
+            if ($text -notmatch '(?i)claude') {
+                Write-Mark 'NG' 'Claude Codeの拡張が一覧に無い。4-3-04（拡張の導入）を確認する'
+                return 'NG'
+            }
+            Write-Mark 'OK' '拡張の版を取得できた'
+            return 'OK'
+        }
+
+    New-Step -Id '4-4-01' -Ch '4' -Title 'No.2成果物の配置（ダミーで代用）' -Kind change `
         -Purpose 'No.3の手順書はNo.2の成果物を参照する。無いと4-4の手順6以降と5章の#5が実行できない' `
         -Expect 'docs/要件整理メモ.md と docs/クーポンAPI設計書.md が置かれる' `
         -Show @"
@@ -1061,17 +1120,21 @@ function Set-StepList {
         }
 
     New-Step -Id '4-4-03' -Ch '4' -Title '切り替え後のファイル確認' -Kind auto `
-        -Purpose '手順書（03-01の手順0）は2つを同じブロックに書いており、どちらかのcwdでは必ず失敗する' `
-        -Expect '両方が見つかること。実行場所が別であることを確認する' `
+        -Purpose 'No3への切り替えでcoupon.pyが増え、No.2の成果物（docs）が残っていることを確認する' `
+        -Expect '両方がsrcから見つかること' `
         -Show @"
-  srcで        : Get-ChildItem app\coupon.py
-  EShop直下で   : Get-ChildItem docs
+  srcで : Get-ChildItem app\coupon.py
+  srcで : Get-ChildItem ..\docs
 
-  失敗しても機材の問題ではない。手順書側の不備として11章に記録する。
+  03-01の手順0と同じ場所・同じ書き方で見る。docsはEShop直下にあるため src からは ..\docs。
 "@ `
         -Cmd {
-            Invoke-InSrc { "src: "; Get-ChildItem 'app\coupon.py' -ErrorAction SilentlyContinue | Select-Object FullName, Length }
-            Invoke-InRepo { "EShop直下: "; Get-ChildItem 'docs' -ErrorAction SilentlyContinue | Select-Object Name, Length }
+            Invoke-InSrc {
+                "src: "
+                Get-ChildItem 'app\coupon.py' -ErrorAction SilentlyContinue | Select-Object FullName, Length
+                "src から ..\docs: "
+                Get-ChildItem '..\docs' -ErrorAction SilentlyContinue | Select-Object Name, Length
+            }
         } `
         -Hint {
             param($text)
@@ -1082,7 +1145,7 @@ function Set-StepList {
                 return 'NG'
             }
             if ($hasDocs) {
-                Write-Mark 'OK' '両方ある。実行場所が別であることを手順書に反映する（11章）'
+                Write-Mark 'OK' '両方ある（03-01の手順0どおり、srcから通る）'
                 return 'OK'
             }
             # 4-4-01 を実施していなければ docs は無いのが当然なので、NGではなく保留にする
@@ -1116,6 +1179,11 @@ function Set-StepList {
                 return 'NG'
             }
             if ($text -match 'ユーザー2件・商品5件・クーポン6件') { Write-Mark 'OK' '期待どおりの件数'; return 'OK' }
+            if ($text -notmatch 'ユーザー' -or $text -notmatch '商品') {
+                # 既存データがあるとseedはユーザーと商品の投入を飛ばし、クーポンの行だけが出る
+                Write-Mark 'NG' 'ユーザーと商品の件数が出ていない。ecommerce.db の削除に失敗している可能性が高い'
+                return 'NG'
+            }
             Write-Mark 'NG' 'クーポンは出ているが件数が期待と違う'
             return 'NG'
         }
@@ -1193,9 +1261,12 @@ function Set-StepList {
         -Show '  プロンプトに @docs/要件整理メモ.md を渡す（4-4-01で配置したもの）' `
         -Expect '内容を読み込む'
 
-    New-Step -Id '5-6' -Ch '5' -Title 'ファイル作成の権限プロンプト（手動）' -Kind manual -Site materials `
-        -Show '  03-02 でテストコードを保存させる' `
-        -Expect '許可を求められる。受講者への案内を統一する'
+    New-Step -Id '5-6' -Ch '5' -Title 'ファイル作成・編集の権限プロンプト（手動）' -Kind manual -Site materials `
+        -Show @"
+  03-02 でテストコードを保存させる（新規作成）
+  03-03 の手順3で app\ 配下の既存ファイルを編集させる（差分を見てから承認する）
+"@ `
+        -Expect '作成と編集それぞれで許可を求められる。表示が違うため、受講者への案内は両方そろえる'
 
     New-Step -Id '5-7' -Ch '5' -Title 'コマンド実行の権限プロンプト（手動）' -Kind manual -Site materials `
         -Show '  03-03 で .venv\Scripts\pytest.exe を実行させる' `
@@ -1211,6 +1282,13 @@ function Set-StepList {
   （このスクリプトの 4-3-11 と同じコマンド）
 "@ `
         -Expect '全件PASS。DATABASE_URLは置換しない'
+
+    New-Step -Id '5-10' -Ch '5' -Title '/security-review が使えるか（手動）' -Kind manual -Site materials `
+        -Purpose '03-00のスライドで1ページ紹介し、03-03でも「時間が余ったら試す」と案内している' `
+        -Show @"
+  claude の対話中に /security-review を実行する（No3の変更に対して）
+"@ `
+        -Expect 'コマンドが存在し、レビュー結果が返る。使えない場合は03-00と03-03の案内を落とす'
 
     # ====================== 6章 所要時間 ======================
 
@@ -1284,7 +1362,7 @@ function Set-StepList {
   2. VS CodeのClaude Codeパネルからサインアウト
   3. ブラウザで claude.ai からログアウト（必要ならプロファイルを削除）
 "@ `
-        -Expect '3つすべてで講師のアカウント情報が残らないこと'
+        -Expect '3つすべてでサインアウトが完了し、リハーサルで使ったアカウントが残らないこと'
 
     New-Step -Id '7-2-b' -Ch '7' -Title '環境変数を開始時点に戻す' -Kind change `
         -Purpose 'setxでは消せない。このリハーサルで足した分だけを戻す。実行ポリシーの変化も確かめる' `
@@ -1327,8 +1405,14 @@ function Set-StepList {
             }
         }
 
+    New-Step -Id '7-3-b' -Ch '7' -Title '記録の受け渡し' -Kind info `
+        -Purpose '記録票と許可申請の根拠になる。機材から消す前に講師へ渡す' `
+        -Show '実行時に保存先を表示する'
+
+    # 7-3-a は 7-3-b の後ろに置く。消す前に何を渡すかを見せるため、事前確認書 7-3 の
+    # 並び（受け渡し → Stop-Transcript → 削除）に合わせている。
     New-Step -Id '7-3-a' -Ch '7' -Title '作業物を消す' -Kind change `
-        -Purpose '記録の退避が済んでから実行する' `
+        -Purpose '記録の受け渡し（7-3-b）が済んでから実行する' `
         -Expect 'cloneしたフォルダと証明書ファイルが消える' `
         -Show @"
   Remove-Item -Recurse -Force <cloneしたEShopのパス>
@@ -1342,10 +1426,6 @@ function Set-StepList {
             Remove-Item "$env:USERPROFILE\corp-ca.pem" -ErrorAction SilentlyContinue
             "corp-ca.pem: $(if (Test-Path "$env:USERPROFILE\corp-ca.pem") { '残っている' } else { '無い' })"
         }
-
-    New-Step -Id '7-3-b' -Ch '7' -Title '記録の退避' -Kind info `
-        -Purpose '記録票と許可申請の根拠になる。機材から消す前に持ち帰る' `
-        -Show '実行時に保存先を表示する'
 }
 
 # ---------------------------------------------------------------- 実行
@@ -1420,8 +1500,7 @@ function Set-AutoVerdict($Step, $Result) {
         $verdict = '自動'
         $memo = '判定の根拠が無いステップ。出力を見て講師が判断する'
     }
-    $c = switch ($verdict) { 'OK' { 'Green' } 'NG' { 'Red' } default { 'DarkGray' } }
-    Write-Host ("  {0}  として記録" -f (Get-MarkLabel $verdict)) -ForegroundColor $c
+    Write-Host ("  {0}  として記録" -f (Get-MarkLabel $verdict)) -ForegroundColor (Get-MarkColor $verdict)
     Add-Result $Step $verdict $Result.Text $memo $Result.Seconds
 }
 
@@ -1450,8 +1529,7 @@ function Read-Verdict($Step, [string]$Output, [double]$Seconds, [string]$Suggest
         }
         if ($v) {
             Add-Result $Step $v $Output $memo $Seconds
-            $c = switch ($v) { 'OK' { 'Green' } 'NG' { 'Red' } default { 'Yellow' } }
-            Write-Host ("  {0}  として記録" -f (Get-MarkLabel $v)) -ForegroundColor $c
+            Write-Host ("  {0}  として記録" -f (Get-MarkLabel $v)) -ForegroundColor (Get-MarkColor $v)
             return
         }
         if ($ans.ToLower() -eq 'm') { $memo = Read-Host '  メモ'; continue }
@@ -1467,6 +1545,7 @@ function Read-Verdict($Step, [string]$Output, [double]$Seconds, [string]$Suggest
 
 function Show-Timings {
     $rows = @(
+        @{ Key = 'install';     Label = 'Claude Codeのインストール';      Ref = '' }
         @{ Key = 'clone';       Label = 'git clone';                     Ref = '社内1.2秒' }
         @{ Key = 'venv';        Label = 'python -m venv';                Ref = '社内8.5秒' }
         @{ Key = 'pip';         Label = 'pip install -r requirements';   Ref = '社内31.4秒' }
@@ -1479,23 +1558,24 @@ function Show-Timings {
     Write-Host ''
     Write-Host '  6-1 No.1のセットアップ（ハンズオン持ち時間の目安12分）' -ForegroundColor Cyan
     $no1 = 0.0
-    foreach ($r in $rows[0..4]) {
+    foreach ($r in $rows[0..5]) {
         $v = $script:Timings[$r.Key]
         if ($null -ne $v) { $no1 += [double]$v }
         Write-Host ('    {0,-34} {1,8}  {2}' -f $r.Label, $(if ($null -ne $v) { "${v}秒" } else { '未計測' }), $r.Ref)
     }
-    Write-Host ('    {0,-34} {1,8}' -f '小計（Claude Code導入を除く）', "$([math]::Round($no1,1))秒") -ForegroundColor White
+    Write-Host ('    {0,-34} {1,8}' -f '小計', "$([math]::Round($no1,1))秒") -ForegroundColor White
     Write-Host ''
     Write-Host '  6-2 No.3の導入（20分枠）' -ForegroundColor Cyan
     $no3 = 0.0
-    foreach ($r in $rows[5..7]) {
+    foreach ($r in $rows[6..8]) {
         $v = $script:Timings[$r.Key]
         if ($null -ne $v) { $no3 += [double]$v }
         Write-Host ('    {0,-34} {1,8}  {2}' -f $r.Label, $(if ($null -ne $v) { "${v}秒" } else { '未計測' }), $r.Ref)
     }
     Write-Host ('    {0,-34} {1,8}' -f '小計', "$([math]::Round($no3,1))秒") -ForegroundColor White
     Write-Host ''
-    Write-Host '  Claude Codeの導入・ログイン・VS Code拡張は手動操作のため、時計で測って記録票に書く' -ForegroundColor DarkGray
+    # 担当者ではなく講師への指示。6章の所要時間が埋まるかに直結するので、飛ばせない
+    Write-Host '  claude.aiへのログインとVS Code拡張の導入は手動操作のため、時計で測って記録票に書く' -ForegroundColor Cyan
 }
 
 function Save-Record {
@@ -1508,11 +1588,15 @@ function Save-Record {
     $null = $sb.AppendLine("- 実施者: $env:USERNAME")
     $null = $sb.AppendLine("- 作業フォルダ: $script:WorkRoot")
     $null = $sb.AppendLine("- 対象章: $($script:TargetChapters -join ', ')")
+    # 中断すると対象章の途中で記録が終わる。その章が0件だったのか中断したのかを見分ける
+    if ($script:Aborted) {
+        $null = $sb.AppendLine("- **途中で中断した**（全 $($script:TotalSteps)ステップ中 $($script:Results.Count)ステップを実施）")
+    }
     $null = $sb.AppendLine("- 記録した時点: $(Get-Date -Format 'HH:mm:ss')（1ステップごとに更新される）")
     $null = $sb.AppendLine("- スクリプトの版: $script:ScriptVersion")
     $null = $sb.AppendLine("- PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))　文字コード: CP$($script:ConsoleCodePage) / PYTHONIOENCODING=$($env:PYTHONIOENCODING)")
     $null = $sb.AppendLine('- このファイルには客先のネットワーク情報を残さない。プロキシのアドレス・除外リスト・PACのURL・IPアドレスは伏せ字に置き換え、3-4-3で入力したURLは書かない')
-    $null = $sb.AppendLine('- ただし画面の記録（rehearsal-check.txt）は伏せていない。入力した文字もそのまま残るため、持ち帰りと削除は7-3に従う')
+    $null = $sb.AppendLine('- ただし画面の記録（rehearsal-check.txt）は伏せていない。入力した文字もそのまま残るため、渡す経路と削除は7-3に従う')
     $null = $sb.AppendLine()
     $null = $sb.AppendLine('## 判定一覧')
     $null = $sb.AppendLine()
@@ -1690,6 +1774,8 @@ $steps = $script:Steps | Where-Object { $targetChapters -contains $_.Ch }
 # 対象から外し、-Chapter 5 と明示したときだけ実施する。
 if (-not $Chapter) { $steps = $steps | Where-Object { $_.Site -ne 'materials' } }
 $total = @($steps).Count
+# 中断したときに「全何件のうち何件を実施したか」を記録へ書くため、関数からも見えるようにする
+$script:TotalSteps = $total
 # 5章が丸ごと外れることがある。指定した章ではなく、実際に走る章を記録に書く
 $script:TargetChapters = @($steps | ForEach-Object { $_.Ch } | Select-Object -Unique | Sort-Object)
 if ($script:TargetChapters.Count -eq 0) { $script:TargetChapters = @('(該当なし)') }
@@ -1833,16 +1919,24 @@ foreach ($step in $steps) {
                 }
                 $tpl = Join-Path $script:MaterialRoot 'docs-template'
                 $n = @(Get-ChildItem (Join-Path $tpl '*.md') -ErrorAction SilentlyContinue).Count
+                # -MaterialDir の指定ミスと、配備物の欠落を切り分けられるようにする
                 if ($n -gt 0) { Write-Host ("    {0,-8} {1} （{2}件）" -f 'テンプレ', $tpl, $n) -ForegroundColor Green }
-                else { Write-Host ("    {0,-8} 見つからない（4-4-01で必要。-MaterialDir で指定する）" -f 'テンプレ') -ForegroundColor Red }
+                elseif (-not (Test-Path $tpl)) { Write-Host ("    {0,-8} フォルダが無い: {1}（4-4-01で必要。-MaterialDir で指定する）" -f 'テンプレ', $tpl) -ForegroundColor Red }
+                else { Write-Host ("    {0,-8} *.mdが0件: {1}（4-4-01で必要。配備物を確認する）" -f 'テンプレ', $tpl) -ForegroundColor Red }
             }
             '6'   { Show-Timings }
             '7-3-b' {
                 Write-Host ''
-                Write-Host "  Start-Transcript の記録: $(Join-Path $script:OutRoot 'rehearsal-check.txt')" -ForegroundColor White
-                Write-Host '  この記録と、最後に出力される precheck-result-*.md を講師の環境へ持ち帰る' -ForegroundColor White
+                Write-Host '  講師へ渡す記録は2つあり、扱いが違う' -ForegroundColor Cyan
+                Write-Host ("    {0}" -f $script:RecordPath) -ForegroundColor White
+                Write-Host '      判定・所要時間・各ステップの出力。客先のネットワーク情報は伏せ字にしてある' -ForegroundColor DarkGray
+                Write-Host ("    {0}" -f (Join-Path $script:OutRoot 'rehearsal-check.txt')) -ForegroundColor White
+                Write-Host '      画面に出たものすべて。伏せ字にしていないので、プロキシのアドレスや' -ForegroundColor DarkGray
+                Write-Host '      入力した文字がそのまま残る' -ForegroundColor DarkGray
                 Write-Host ''
-                Write-Host '  持ち帰ったあとに、機材に残した次のものを消す（講師専用資料を残さない）' -ForegroundColor Cyan
+                Write-Host '  受け渡しはTeamsの会議チャットに添付する' -ForegroundColor Cyan
+                Write-Host ''
+                Write-Host '  渡したあとに、機材に残した次のものを消す（講師専用資料を残さない）' -ForegroundColor Cyan
                 if ($script:WorkRoot -eq $script:OutRoot) {
                     Write-Host ("    {0}  （作業物と記録。フォルダごと）" -f $script:OutRoot) -ForegroundColor White
                 } else {
@@ -1852,8 +1946,8 @@ foreach ($step in $steps) {
                 Write-Host ("    {0}  （rehearsalブランチのクローンごと）" -f $script:MaterialRoot) -ForegroundColor White
                 Write-Host '  この削除は自動では行わない（講師自身のPCで実行した場合に教材のクローンを消してしまうため）' -ForegroundColor DarkGray
                 Write-Host ''
-                Write-Host '  記録には客先のネットワーク情報（プロキシのアドレス・除外リスト等）が含まれる。' -ForegroundColor Yellow
-                Write-Host '  持ち帰ったあとの取り扱いに注意し、社外・他案件へ出さない' -ForegroundColor Yellow
+                Write-Host '  rehearsal-check.txt は客先のネットワーク情報を含んだままなので、渡したあとの' -ForegroundColor Yellow
+                Write-Host '  取り扱いに注意する。社外・他案件へ出さない' -ForegroundColor Yellow
             }
         }
         if (-not $Auto) {
@@ -1890,7 +1984,7 @@ foreach ($step in $steps) {
         if ($step.Id -eq '3-4-3' -and $ans -match '^https?://') {
             Write-Rule
             $code = (curl.exe -s -o NUL -w "%{http_code}" --max-time 20 $ans 2>&1)
-            Write-Host "  入力されたURL => $code" -ForegroundColor White
+            Write-Host "  共有リンクの到達性 => $code" -ForegroundColor White
             Write-Rule
             $script:Captured['3-4-3'] = "共有リンクの到達性 => $code"
             $script:Results[-1].Output = "共有リンクの到達性 => $code（URLは記録しない）"
@@ -1981,17 +2075,17 @@ foreach ($step in $steps) {
 
 Write-Head ' 実施結果'
 
+if ($script:Aborted) {
+    Write-Host ("  途中で中断した（全 {0}ステップ中 {1}ステップを実施）" -f $script:TotalSteps, $script:Results.Count) -ForegroundColor Yellow
+    Write-Host '  続けるときは -Chapter で残りの章を指定する' -ForegroundColor DarkGray
+    Write-Host ''
+}
+
 if ($script:Results.Count -eq 0) {
     Write-Host '  記録はない' -ForegroundColor DarkGray
 } else {
     foreach ($r in $script:Results) {
-        $c = switch ($r.Verdict) {
-            'OK'   { 'Green' }
-            'NG'   { 'Red' }
-            '保留' { 'Yellow' }
-            default { 'DarkGray' }
-        }
-        Write-Host ('  {0,-6} {1,-10} {2}' -f $r.Verdict, $r.Id, $r.Title) -ForegroundColor $c
+        Write-Host ('  {0,-6} {1,-10} {2}' -f $r.Verdict, $r.Id, $r.Title) -ForegroundColor (Get-MarkColor $r.Verdict)
     }
     Write-Host ''
     $ng = @($script:Results | Where-Object Verdict -eq 'NG')
@@ -2051,5 +2145,5 @@ if (-not $NoTranscript) {
 }
 
 Write-Host ''
-Write-Host '  記録は機材から消す前に講師の環境へ持ち帰る（7-3）' -ForegroundColor White
+Write-Host '  記録は機材から消す前に講師へ渡す（7-3）' -ForegroundColor White
 Write-Host ''

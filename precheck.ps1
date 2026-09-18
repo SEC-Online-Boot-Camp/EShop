@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = 'adc9df56（2026-09-18 配備）'
+$script:ScriptVersion = 'c6f9c2f1（2026-09-18 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -507,18 +507,41 @@ function Set-StepList {
     New-Step -Id '2-2-e' -Ch '2' -Title 'Excelの有無' -Kind auto `
         -Purpose '01-05-セキュリティチェックシート.xlsx の編集に必要' `
         -Expect 'Excelが導入されていること' `
-        -Show 'レジストリのApp Pathsと、.xlsx に関連付けられたアプリを見る' `
+        -Show 'App Paths（HKLM・HKCU）・.xlsxの関連付け・Click-to-Runの導入先を順に見る' `
         -Cmd {
-            $ex = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\EXCEL.EXE' -ErrorAction SilentlyContinue
-            if ($ex) { "App Paths     : $($ex.'(default)')" } else { 'App Paths     : 見つからない' }
+            # 貸与機ではHKLMのApp Pathsも assoc も空だったのに、手で開いたら編集できた
+            # （2026-09-18）。assoc は HKCR しか見ないので、利用者ごとの導入と
+            # 利用者ごとの関連付けを拾えない。見る場所を増やす。
+            foreach ($k in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\EXCEL.EXE',
+                'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\EXCEL.EXE') {
+                $v = (Get-ItemProperty $k -ErrorAction SilentlyContinue).'(default)'
+                "App Paths {0,-4}: {1}" -f $(if ($k.StartsWith('HKLM')) { 'HKLM' } else { 'HKCU' }), $(if ($v) { $v } else { '見つからない' })
+            }
+            $uc = (Get-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.xlsx\UserChoice' -ErrorAction SilentlyContinue).ProgId
+            "利用者ごとの関連付け: $(if ($uc) { $uc } else { '無し' })"
             $assoc = try { (cmd /c assoc .xlsx 2>&1) } catch { '' }
             "関連付け(.xlsx): $assoc"
+            $c2r = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration' -ErrorAction SilentlyContinue).InstallationPath
+            if ($c2r) { "Click-to-Run : $c2r" }
+            $hit = $null
+            foreach ($d in $c2r, 'C:\Program Files\Microsoft Office', 'C:\Program Files (x86)\Microsoft Office') {
+                if (-not $d -or $hit) { continue }
+                foreach ($sub in 'root\Office16', 'Office16') {
+                    $p = Join-Path $d "$sub\EXCEL.EXE"
+                    if (-not $hit -and (Test-Path $p)) { $hit = $p }
+                }
+            }
+            if ($hit) { "実体あり: $hit" } else { '実体: よくある置き場には見つからない' }
         } `
         -Hint {
             param($text)
             if ($text -match 'EXCEL\.EXE') { Write-Mark 'OK' 'Excelが導入されている'; return 'OK' }
-            Write-Mark 'NG' 'Excelが見つからない。1章の演習（xlsxの編集）ができない'
-            return 'NG'
+            if ($text -match 'Excel\.Sheet') { Write-Mark 'OK' '.xlsxがExcelに関連付けられている'; return 'OK' }
+            # 自動では全ての導入形（Storeアプリ版・利用者ごとの導入）を網羅できない。
+            # 実際に編集できた機材でNGを出した実績があるので、断定しない。
+            Write-Mark '保留' '自動では見つけられなかった。xlsxを実際に開いて編集できるかを手で確かめる'
+            Write-Host '        Storeアプリ版や利用者ごとの導入は、ここで見ている場所に出ないことがある' -ForegroundColor Yellow
+            return '保留'
         }
 
     # ====================== 3章 ネットワークとプロキシ ======================

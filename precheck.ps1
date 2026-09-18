@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '29cfeec1（2026-09-18 配備）'
+$script:ScriptVersion = '4008006b（2026-09-18 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -1175,8 +1175,22 @@ $script:VenvNote
     New-Step -Id '4-3-12' -Ch '4' -Title 'VS Code拡張の版' -Kind auto `
         -Purpose '5-8（拡張でも同じか）は拡張の版に依存する。CLIだけ12章で照合できて拡張ができないのは非対称' `
         -Expect 'Claude Codeの拡張の版を記録する（本番と同一かを12章で照合する）' `
-        -Show 'code --list-extensions --show-versions' `
-        -Cmd { code --list-extensions --show-versions 2>&1 } `
+        -Show 'code --list-extensions --show-versions（照合用の2行を先に出す）' `
+        -Cmd {
+            $raw = @(code --list-extensions --show-versions 2>&1 | ForEach-Object { "$_" })
+            $cl = @($raw | Where-Object { $_ -match '(?i)claude-code' })
+            $py = @($raw | Where-Object { $_ -match '(?i)^ms-python\.python@' })
+            "Claude拡張 : $(if ($cl.Count -gt 0) { $cl -join ' ' } else { '無し' })"
+            # Python拡張が無ければ、ターミナルを開くたびの自動activate（拡張の
+            # python.terminal.activateEnvironment に由来）は起きない。01-01手順2の注記が
+            # 当日発生するかの判断材料になるので、一覧を絞らずここに出す。
+            "Python拡張 : $(if ($py.Count -gt 0) { $py -join ' ' } else { '無し（ターミナルの自動activateは起きない）' })"
+            # code の stderr が混ざるため、拡張の形をした行だけを数える。ただし出力からは落とさない
+            # （Hint の「解決できない」判定がこのテキストを見ている）。
+            $exts = @($raw | Where-Object { $_ -match '^[\w-]+\.[\w-]+@' })
+            "導入済み   : $($exts.Count)件"
+            $raw | ForEach-Object { "  $_" }
+        } `
         -Hint {
             param($text)
             if ($text -match '(?i)not recognized|認識されません|CommandNotFound') {
@@ -1186,7 +1200,9 @@ $script:VenvNote
                 Write-Host '        版はVS Codeの拡張ビューで読める。手で記録して12章の照合に使う' -ForegroundColor Yellow
                 return '保留'
             }
-            if ($text -notmatch '(?i)claude') {
+            # 'claude' だと「Claude拡張 : 無し」のラベルに当たってしまう。
+            # 'claude-code' はラベルに当たらず、発行者名が変わっても拾える。
+            if ($text -notmatch '(?i)claude-code') {
                 Write-Mark 'NG' 'Claude Codeの拡張が一覧に無い。4-3-04（拡張の導入）を確認する'
                 return 'NG'
             }

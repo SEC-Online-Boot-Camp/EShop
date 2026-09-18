@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = 'c6f9c2f1（2026-09-18 配備）'
+$script:ScriptVersion = '40b6c2f7（2026-09-18 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、

@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '51889de9（2026-09-18 配備）'
+$script:ScriptVersion = 'd08b4cab（2026-09-18 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -1691,19 +1691,31 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
 # ロックで pip install や git switch が落ちることもある。
 # 作業フォルダと記録を同じ1フォルダにまとめ、7-3でフォルダごと片付くようにする。
 function Get-DefaultBase {
-    # 前日に社内で clone しておいて当日走らせる段取りがあるため、スクリプトが
-    # rehearsal-<日付> の下に置かれているならそのフォルダを使い、置き場が
-    # 日付違いで割れないようにする。フォルダ名で判定しているので、正本を教材
-    # リポジトリから直接実行したとき（親が SW編）はマッチせず下の既定に落ちる。
     # 実行ポリシー対策の起動（冒頭の起動方法3）では $PSScriptRoot が空になる。
     # 貸与機ではこの経路がむしろ本命なので、$MaterialRoot と同じくカレントに
     # フォールバックする。案内している手順は clone したフォルダへ Set-Location
     # してから相対パスで呼ぶ形なので、カレントはスクリプトの置き場になる。
-    # スクリプトを rehearsal-<日付> の中へ直に置く使い方もあるので、置き場そのものと
-    # その親の両方を見る。
     $here = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-    foreach ($cand in $here, (Split-Path $here -Parent)) {
-        if ($cand -and (Split-Path $cand -Leaf) -match '^rehearsal-\d{8}$') { return $cand }
+
+    # スクリプトを rehearsal-<日付> の中へ直に置く使い方。このときは親がドライブ直下に
+    # なるので、下の「親を使う」には乗せられない。
+    if ((Split-Path $here -Leaf) -match '^rehearsal-\d{8}$') { return $here }
+
+    # 置き場は「スクリプトを置いたフォルダの親」にする。手で作ったフォルダへ clone して
+    # あれば作業物と記録もそこにまとまり、-WorkDir と -OutDir を渡さずに済む。
+    # 前日に社内で clone しておく段取りでも、置き場が実行日で割れない。
+    # 次の3つを満たすときだけ。外すと置き場が意図しない場所に決まる。
+    #   ・$here がスクリプトの置き場である（docs-template が並んでいる）。起動方法3で
+    #     カレントが別の場所だったときに、その親を取り違えないため
+    #   ・正本を直接実行していない。正本の親は SW編 で、教材リポジトリに書き込んでしまう
+    #   ・親がドライブ直下でなく、OneDrive配下でもない。前者は C:\ に記録を置いてしまう。
+    #     後者は .venv と .git が同期対象になり、6章の実測が当てにならなくなる
+    #     （デスクトップを既定にしていないのと同じ理由）
+    if ($script:ScriptVersion -notmatch '未配備' -and (Test-Path (Join-Path $here 'docs-template'))) {
+        $parent = Split-Path $here -Parent
+        if ($parent -and (Split-Path $parent -Parent) -and $parent -notmatch '(?i)OneDrive' -and (Test-Path $parent)) {
+            return $parent
+        }
     }
 
     # システムドライブ直下は標準ユーザーでもフォルダを作れる。エクスプローラーで
@@ -1943,7 +1955,18 @@ foreach ($step in $steps) {
                     Write-Host ("    {0}  （作業物。フォルダごと）" -f $script:WorkRoot) -ForegroundColor White
                     Write-Host ("    {0}  （記録。rehearsal-check.txt と precheck-*.md）" -f $script:OutRoot) -ForegroundColor White
                 }
-                Write-Host ("    {0}  （rehearsalブランチのクローンごと）" -f $script:MaterialRoot) -ForegroundColor White
+                # クローンが置き場の中にあるなら、上の行で一緒に消える。別に出すと
+                # 「2箇所消す」と読まれてしまう。
+                $matInside = $false
+                foreach ($r in $script:WorkRoot, $script:OutRoot) {
+                    if (-not $r) { continue }
+                    $a = $script:MaterialRoot.TrimEnd('\')
+                    $b = $r.TrimEnd('\')
+                    if ($a -eq $b -or $a.ToLower().StartsWith($b.ToLower() + '\')) { $matInside = $true }
+                }
+                if (-not $matInside) {
+                    Write-Host ("    {0}  （rehearsalブランチのクローンごと）" -f $script:MaterialRoot) -ForegroundColor White
+                }
                 Write-Host '  この削除は自動では行わない（講師自身のPCで実行した場合に教材のクローンを消してしまうため）' -ForegroundColor DarkGray
                 Write-Host ''
                 Write-Host '  rehearsal-check.txt は客先のネットワーク情報を含んだままなので、渡したあとの' -ForegroundColor Yellow

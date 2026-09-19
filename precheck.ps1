@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '4008006b（2026-09-18 配備）'
+$script:ScriptVersion = '7265fa58（2026-09-19 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -1385,6 +1385,25 @@ $script:VenvNote
         -Expect '意図的な欠陥に由来する失敗が出て、最後に全件PASSまで到達できる（件数は事前確認書の4-4）'
 
     # ====================== 5章 Claude Codeの動作確認 ======================
+
+    New-Step -Id '5-1' -Ch '5' -Title '版の記録' -Kind auto -Site materials `
+        -Purpose '5-2以降の結果がどの版で確かめたものかを残す。12章で本番当日の版と照合する' `
+        -Expect 'CLIと拡張の版が記録される。貸与機（4-3-02・4-3-12）と離れていれば差も残る' `
+        -Show 'claude --version と code --list-extensions --show-versions' `
+        -Cmd {
+            $v = @(claude --version 2>&1 | ForEach-Object { "$_" })
+            "CLI         : $(if ($v.Count -gt 0) { $v -join ' ' } else { '解決できない' })"
+            $raw = @(code --list-extensions --show-versions 2>&1 | ForEach-Object { "$_" })
+            $cl = @($raw | Where-Object { $_ -match '(?i)claude-code' })
+            "VS Code拡張 : $(if ($cl.Count -gt 0) { $cl -join ' ' } else { '無し' })"
+            ''
+            '貸与機の版（4-3-02・4-3-12）と離れていると、5-3・5-6・5-7・5-8 の結果が当日に'
+            '当てはまらない。離れている場合は揃えてから実施するか、差を記録に残す。'
+        } `
+        -Hint {
+            param($text)
+            Write-Mark '参考' '貸与機の版と突き合わせる。とくに 5-8 は拡張の版に直接依存する'
+        }
 
     New-Step -Id '5-2' -Ch '5' -Title 'CLAUDE.md の認識（手動）' -Kind manual -Site materials `
         -Show "  claudeの対話中に /clear のあと /context" `

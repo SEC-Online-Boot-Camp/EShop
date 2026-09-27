@@ -4,21 +4,38 @@ AI活用入門講座（SW編）の**No.1・No.2**で使用する、既存ECサ�
 「すでに動いている既存システム」という設定で配布します。講座内では、このリポジトリに
 **クーポン/割引適用機能**を設計する課題に取り組みます（詳細は講座内資料を参照）。
 
-> **No.3でもこのフォルダをそのまま使います。** `No3`ブランチに切り替えると、
+> **No.3でもこのフォルダをそのまま使います。** `coupon`ブランチに切り替えると、
 > クーポン機能が実装済みの状態になります。
 >
 > ```powershell
 > git fetch origin
-> git switch No3
+> git switch coupon
 > ```
 >
 > `docs/`に保存した成果物や`.env`への変更はそのまま残ります。
+
+## 構成
+
+| パス | 内容 |
+| :--- | :--- |
+| `backend/` | FastAPI のバックエンド（API・テスト） |
+| `frontend/` | React + TypeScript + Vite の画面。詳細は [frontend/README.md](frontend/README.md) |
+| `.github/workflows/` | CI（テスト・画面チェック・既存テストの書き換え検知）と、Claude による PR レビュー |
 
 ## セットアップ
 
 セットアップ手順は、講座で配布される「01-01-研修用プロジェクト構築手順.md」を参照してください。
 
-カバレッジを確認したい場合は以下を実行する。
+画面も使う場合は、バックエンドを起動したうえで別のターミナルで次を実行し、<http://localhost:5173> を開きます
+（Node.js 24 以降が必要）。
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+カバレッジを確認したい場合は、`backend/` で以下を実行する。
 
 ```bash
 pytest --cov=app --cov-report=term-missing
@@ -30,7 +47,7 @@ HTML形式のレポートも生成できる（`htmlcov/index.html` をブラウ�
 pytest --cov=app --cov-report=html
 ```
 
-既存テストがどこまで保証していてどこからが未検証か（ミューテーションテストの結果を含む）は [TESTING.md](TESTING.md) を参照。
+既存テストがどこまで保証していてどこからが未検証か（ミューテーションテストの結果を含む）は [backend/TESTING.md](backend/TESTING.md) を参照。
 
 ## 既存API一覧
 
@@ -45,7 +62,7 @@ pytest --cov=app --cov-report=html
 
 ## セキュリティ演習について（No.1）
 
-`.env` には、研修用にあえて用意した**架空の**機密情報（DB接続文字列・JWT秘密鍵・決済ゲートウェイAPIキー）が
+`backend/.env` には、研修用にあえて用意した**架空の**機密情報（DB接続文字列・JWT秘密鍵・決済ゲートウェイAPIキー）が
 含まれています。実在するシステムの値ではありませんが、「このままAIに貼り付けてよいか」を考える教材として
 使ってください。本来この種のファイルはリポジトリにコミットすべきではない、という点自体も演習の対象です。
 

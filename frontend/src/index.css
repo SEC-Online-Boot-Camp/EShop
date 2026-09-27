@@ -1,0 +1,197 @@
+:root {
+  --text: #1f2328;
+  --muted: #656d76;
+  --bg: #f6f8fa;
+  --card: #fff;
+  --border: #d0d7de;
+  --accent: #0969da;
+  --danger: #cf222e;
+  --danger-bg: #ffebe9;
+  --warn-bg: #fff8c5;
+  --ok-bg: #dafbe1;
+
+  font: 16px/1.6 system-ui, 'Segoe UI', 'Yu Gothic UI', sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+.logo {
+  font-size: 20px;
+}
+
+.nav {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.nav a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.nav a.active {
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.main {
+  max-width: 960px;
+  margin: 24px auto;
+  padding: 0 16px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 24px 24px;
+}
+
+.card.narrow {
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+
+.table th,
+.table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.table .num {
+  text-align: right;
+}
+
+.badge {
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #fff;
+  background: var(--danger);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form label,
+.inline-form label {
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.inline-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+input {
+  padding: 6px 8px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+input.qty {
+  width: 72px;
+}
+
+button {
+  padding: 6px 14px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+button.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  max-width: 320px;
+  margin: 0 0 16px auto;
+}
+
+.summary dd {
+  margin: 0;
+  text-align: right;
+}
+
+.summary .total {
+  font-weight: bold;
+  font-size: 18px;
+}
+
+.error,
+.warning,
+.notice {
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.error {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.warning {
+  background: var(--warn-bg);
+}
+
+.notice {
+  background: var(--ok-bg);
+}
+
+.hint {
+  font-size: 14px;
+  color: var(--muted);
+}

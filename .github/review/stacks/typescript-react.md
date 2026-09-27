@@ -68,12 +68,12 @@ target: typescript-react
   - `request<T>()` の `as T` は応答を検証しないため、型を信じて進むと画面が壊れる箇所（項目の欠落・`null`）に手当てがあるか確認する。
 - **悪い例**:
   ```ts
-  export type Cart = { items: CartItem[]; subtotal: number; discount: number } // API は discount_amount を返す
+  export type Cart = { items: CartItem[]; subtotal: number; shipping: number } // API は shipping_fee を返す
   ```
 - **良い例**:
   ```ts
   // backend/app/schemas.py の CartOut と対応
-  export type Cart = { items: CartItem[]; subtotal: number; discount_amount: number; total: number }
+  export type Cart = { items: CartItem[]; subtotal: number; shipping_fee: number; total: number }
   ```
 
 ---
@@ -143,15 +143,16 @@ target: typescript-react
   - Promise を投げっぱなしにしてエラーを失っていないか（`.catch` も `await` もない呼び出し）確認する。
 - **悪い例**:
   ```ts
-  const res = await fetch('/api/cart/coupon', { method: 'PUT', body })
-  setCart(await res.json()) // 422 のエラー応答をカートとして表示してしまう
+  const res = await fetch(`/api/products/${productId}/reviews`, { method: 'POST', body })
+  setReviews([...reviews, await res.json()]) // 422 のエラー応答をレビューとして表示してしまう
   ```
 - **良い例**:
   ```ts
   try {
-    setCart(await api.applyCoupon(token, code)) // request() が !res.ok を ApiError にする
+    const review = await api.postReview(token, productId, input) // request() が !res.ok を ApiError にする
+    setReviews([...reviews, review])
   } catch (err: unknown) {
-    handleError(err, 'クーポンを適用できませんでした')
+    handleError(err, 'レビューを投稿できませんでした')
   }
   ```
 
@@ -170,7 +171,7 @@ target: typescript-react
 - **重要度**: Should
 - **品質特性 (ISO/IEC 25010)**: 使用性 > ユーザーエラー防止性 ／ 信頼性 > 成熟性
 - **確認内容**:
-  - 注文確定・クーポン適用など状態を変える操作で、処理中はボタンを押せないようにしているか確認する（既存の `busy` の扱い）。
+  - 注文確定・レビューの投稿など状態を変える操作で、処理中はボタンを押せないようにしているか確認する（既存の `busy` の扱い）。
   - 処理が失敗したときに、押せない状態のまま戻らなくならないか（`finally` で戻しているか）確認する。
 - **悪い例／良い例**: 「注文を確定する」ボタンを連打すると `POST /orders` が2回飛ぶ実装にせず、送信中は `disabled` にし、`finally` で戻す。
 
@@ -183,15 +184,15 @@ target: typescript-react
 - **重要度**: Must
 - **品質特性 (ISO/IEC 25010)**: セキュリティ > 完全性 / 機密性
 - **確認内容**:
-  - API の応答や入力値（商品名・クーポン名・エラー文言など）を `dangerouslySetInnerHTML` で HTML として埋め込んでいないか確認する。どうしても HTML を出すなら、サニタイズ（DOMPurify 等）しているか確認する。
+  - API の応答や入力値（商品名・レビュー本文・エラー文言など）を `dangerouslySetInnerHTML` で HTML として埋め込んでいないか確認する。どうしても HTML を出すなら、サニタイズ（DOMPurify 等）しているか確認する。
   - `href`・`src` に外部由来の値を入れる場合、`javascript:` などのスキームを弾いているか確認する。
 - **悪い例**:
   ```tsx
-  <p dangerouslySetInnerHTML={{ __html: coupon.description }} />
+  <p dangerouslySetInnerHTML={{ __html: review.body }} />
   ```
 - **良い例**:
   ```tsx
-  <p>{coupon.description}</p> {/* JSX の埋め込みは自動でエスケープされる */}
+  <p>{review.body}</p> {/* JSX の埋め込みは自動でエスケープされる */}
   ```
 
 ### 4.2 トークンと秘密情報の置き場所
@@ -218,11 +219,11 @@ target: typescript-react
 - **重要度**: Must
 - **品質特性 (ISO/IEC 25010)**: 機能適合性 > 機能正確性 ／ セキュリティ > 完全性
 - **確認内容**:
-  - 支払金額・割引額を画面で独自に計算して表示・送信していないか確認する（計算の正はサーバー。画面で計算するとサーバーと食い違い、送った金額を信用されると改ざんできる）。
+  - 支払金額・送料・消費税を画面で独自に計算して表示・送信していないか確認する（計算の正はサーバー。画面で計算するとサーバーと食い違い、送った金額を信用されると改ざんできる）。
   - 金額の表示に既存の `yen()`（`frontend/src/format.ts`）を使っているか確認する。
 - **悪い例**:
   ```tsx
-  <dd>{yen(Math.floor(cart.subtotal * 0.9))}</dd> {/* 割引の計算を画面が持っている */}
+  <dd>{yen(cart.subtotal + 800)}</dd> {/* 送料を画面が決め打ちで足している（地域で変わるとずれる） */}
   ```
 - **良い例**:
   ```tsx
@@ -275,5 +276,5 @@ target: typescript-react
 - **確認内容**:
   - API は既存の `mockFetch`（`frontend/src/test/mockFetch.ts`）でメソッドとパスごとに定義し、定義していないリクエストがエラーになる状態を保っているか確認する（呼ぶはずのない API を呼んでいても気づける）。
   - モックの応答が実際のバックエンドの形（`{"detail": "..."}`、422 の配列形式、ステータスコード）に沿っているか確認する。
-  - 送ったリクエストの中身（クーポンコード・数量）を検証すべきテストで、モックの呼び出し引数を確認しているか確認する。
-- **悪い例／良い例**: どの URL にも同じ応答を返す `vi.fn()` で `fetch` を丸ごと差し替えず、`mockFetch({ 'PUT /api/cart/coupon': … })` のように呼び出しごとに定義する。
+  - 送ったリクエストの中身（商品 ID・数量・レビュー本文）を検証すべきテストで、モックの呼び出し引数を確認しているか確認する。
+- **悪い例／良い例**: どの URL にも同じ応答を返す `vi.fn()` で `fetch` を丸ごと差し替えず、`mockFetch({ 'POST /api/cart/items': … })` のように呼び出しごとに定義する。

@@ -154,6 +154,10 @@ button.link-button {
   color: var(--accent);
 }
 
+.coupon {
+  margin-bottom: 16px;
+}
+
 .summary {
   display: grid;
   grid-template-columns: 1fr auto;

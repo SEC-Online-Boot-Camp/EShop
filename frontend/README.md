@@ -2,8 +2,8 @@
 
 `backend/`（FastAPI）の API を呼び出す画面です。React + TypeScript + Vite で作っています。
 
-> `main` ブランチの画面は、クーポン機能を**実装する前**の状態です。カート画面にもクーポンの入力欄はありません。
-> クーポン機能を実装済みの状態は `coupon` ブランチにあります（`git switch coupon`）。
+> このブランチ（`coupon`）の画面は、クーポン機能を**実装済み**の状態です。カート画面でクーポンの適用・解除と割引額の表示ができます。
+> クーポン機能を実装する前の開始状態は `main` ブランチにあります。
 
 ## 必要なもの
 
@@ -25,8 +25,8 @@ npm install
 npm run dev
 ```
 
-ブラウザで <http://localhost:5173> を開きます。初期データのユーザーは `taro@example.com` / `password123` です
-（`backend/app/seed.py` を参照）。
+ブラウザで <http://localhost:5173> を開きます。初期データのユーザーは `taro@example.com` / `password123` です。
+クーポンは `SPRING10`（10%引き・上限1,000円）と `FLAT500`（500円引き）などが使えます（`backend/app/seed.py` を参照）。
 
 ## 構成
 
@@ -35,7 +35,7 @@ npm run dev
 | `src/api/types.ts` | API の型。`backend/app/schemas.py` と対応させている |
 | `src/api/client.ts` | fetch のラッパー。エラー応答を `ApiError` にする |
 | `src/auth/` | ログイン状態（JWT）の保持と、要ログイン画面のガード |
-| `src/pages/` | 商品一覧・ログイン・カート・注文完了 |
+| `src/pages/` | 商品一覧・ログイン・カート（クーポン適用）・注文完了 |
 | `vite.config.ts` | `/api/*` をバックエンド（`127.0.0.1:8000`）へ転送するプロキシ |
 
 画面からは `/api/cart` のように呼び、Vite が `/api` を外して `http://127.0.0.1:8000/cart` へ転送します。

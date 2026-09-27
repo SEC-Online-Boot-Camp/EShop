@@ -1,4 +1,4 @@
-// バックエンドの src/app/schemas.py と対応させた型定義。
+// バックエンドの backend/app/schemas.py と対応させた型定義。
 // schemas.py を変更したら、こちらも合わせて更新すること。
 
 export type TokenResponse = {

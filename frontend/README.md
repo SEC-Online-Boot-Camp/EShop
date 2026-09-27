@@ -1,6 +1,6 @@
 # EShop フロントエンド
 
-`src/`（FastAPI）の API を呼び出す画面です。React + TypeScript + Vite で作っています。
+`backend/`（FastAPI）の API を呼び出す画面です。React + TypeScript + Vite で作っています。
 
 > このフロントエンドは `frontend` ブランチにだけあり、講座 No.1〜3 では使いません。
 > クーポン機能（No3 の完全コード）を前提にしています。
@@ -8,15 +8,15 @@
 ## 必要なもの
 
 - Node.js 24 以降（npm を含む）
-- バックエンド（`src/`）が起動していること
+- バックエンド（`backend/`）が起動していること
 
 ## 起動方法
 
 ターミナルを2つ使います。
 
 ```powershell
-# 1つ目: バックエンド（src/ で。初回は python -m app.seed で初期データを投入）
-cd src
+# 1つ目: バックエンド（backend/ で。初回は python -m app.seed で初期データを投入）
+cd backend
 uvicorn app.main:app --reload
 
 # 2つ目: フロントエンド
@@ -26,13 +26,13 @@ npm run dev
 ```
 
 ブラウザで <http://localhost:5173> を開きます。初期データのユーザーは `taro@example.com` / `password123` です。
-クーポンは `SPRING10`（10%引き・上限1,000円）と `FLAT500`（500円引き）などが使えます（`src/app/seed.py` を参照）。
+クーポンは `SPRING10`（10%引き・上限1,000円）と `FLAT500`（500円引き）などが使えます（`backend/app/seed.py` を参照）。
 
 ## 構成
 
 | パス | 内容 |
 | :--- | :--- |
-| `src/api/types.ts` | API の型。`src/app/schemas.py` と対応させている |
+| `src/api/types.ts` | API の型。`backend/app/schemas.py` と対応させている |
 | `src/api/client.ts` | fetch のラッパー。エラー応答を `ApiError` にする |
 | `src/auth/` | ログイン状態（JWT）の保持と、要ログイン画面のガード |
 | `src/pages/` | 商品一覧・ログイン・カート（クーポン適用）・注文完了 |

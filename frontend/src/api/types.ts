@@ -24,17 +24,6 @@ export type CartItem = {
 export type Cart = {
   items: CartItem[]
   subtotal: number
-  applied_coupon_code: string | null
-  discount_amount: number
-  total: number
-}
-
-export type CouponApplyResult = {
-  coupon_code: string
-  eligible_subtotal: number
-  discount_amount: number
-  subtotal: number
-  total: number
 }
 
 export type OrderItem = CartItem
@@ -43,8 +32,6 @@ export type Order = {
   id: number
   status: string
   subtotal: number
-  coupon_code: string | null
-  discount_amount: number
   items: OrderItem[]
   created_at: string
 }

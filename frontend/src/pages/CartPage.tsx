@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 
 import { ApiError, api } from '../api/client'
@@ -13,7 +12,6 @@ export function CartPage() {
   const navigate = useNavigate()
 
   const [cart, setCart] = useState<Cart | null>(null)
-  const [couponCode, setCouponCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -55,30 +53,13 @@ export function CartPage() {
     }
   }
 
-  function handleApplyCoupon(e: FormEvent) {
-    e.preventDefault()
-    const code = couponCode.trim()
-    if (!code) return
-    void run(async () => {
-      await api.applyCoupon(token, code)
-      setCouponCode('')
-      await reload()
-    }, 'クーポンを適用できませんでした')
-  }
-
-  function handleRemoveCoupon() {
-    void run(async () => {
-      setCart(await api.removeCoupon(token))
-    }, 'クーポンを解除できませんでした')
-  }
-
-  function handleCheckout(current: Cart) {
+  function handleCheckout() {
     void run(async () => {
       try {
-        const order = await api.checkout(token, current.total)
+        const order = await api.checkout(token)
         navigate('/orders/complete', { state: { order } })
       } catch (err) {
-        // 金額の不一致などで確定できなかったときは、最新の金額を表示し直す
+        // 確定できなかったときは、最新のカート内容を表示し直す
         await reload()
         throw err
       }
@@ -93,10 +74,6 @@ export function CartPage() {
       </section>
     )
   }
-
-  // 適用後にカート内容が変わって条件を満たさなくなると、コードは残ったまま割引が0になる
-  const couponNotEligible =
-    cart.applied_coupon_code !== null && cart.discount_amount === 0
 
   return (
     <section className="card">
@@ -128,55 +105,15 @@ export function CartPage() {
             </tbody>
           </table>
 
-          <div className="coupon">
-            {cart.applied_coupon_code === null ? (
-              <form onSubmit={handleApplyCoupon} className="inline-form">
-                <label>
-                  クーポンコード
-                  <input
-                    value={couponCode}
-                    onChange={(e) => setCouponCode(e.target.value)}
-                    placeholder="例: SPRING10"
-                  />
-                </label>
-                <button type="submit" disabled={busy || !couponCode.trim()}>
-                  適用
-                </button>
-              </form>
-            ) : (
-              <p>
-                適用中のクーポン: <strong>{cart.applied_coupon_code}</strong>{' '}
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={handleRemoveCoupon}
-                  disabled={busy}
-                >
-                  解除
-                </button>
-              </p>
-            )}
-            {couponNotEligible && (
-              <p className="warning" role="status">
-                現在のカート内容ではクーポンの適用条件を満たしていません。
-                このまま注文を確定するとエラーになります。
-              </p>
-            )}
-          </div>
-
           <dl className="summary">
-            <dt>小計</dt>
-            <dd>{yen(cart.subtotal)}</dd>
-            <dt>割引</dt>
-            <dd>{cart.discount_amount > 0 ? `−${yen(cart.discount_amount)}` : yen(0)}</dd>
             <dt className="total">お支払い金額</dt>
-            <dd className="total">{yen(cart.total)}</dd>
+            <dd className="total">{yen(cart.subtotal)}</dd>
           </dl>
 
           <button
             type="button"
             className="primary"
-            onClick={() => handleCheckout(cart)}
+            onClick={handleCheckout}
             disabled={busy}
           >
             注文を確定する

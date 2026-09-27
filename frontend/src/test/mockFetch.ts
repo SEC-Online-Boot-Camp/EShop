@@ -2,7 +2,7 @@ import { vi } from 'vitest'
 
 type Handler = (body: unknown) => { status?: number; body: unknown }
 
-// "POST /api/cart/coupon" のようなキーで応答を定義し、fetch を差し替える
+// "POST /api/cart/items" のようなキーで応答を定義し、fetch を差し替える
 export function mockFetch(routes: Record<string, Handler>) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const key = `${init?.method ?? 'GET'} ${url}`

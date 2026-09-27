@@ -10,19 +10,10 @@ import { CartPage } from './CartPage'
 
 const baseCart: Cart = {
   items: [
+    { product_id: 1, product_name: 'ワイヤレスマウス', unit_price: 2980, quantity: 2 },
     { product_id: 2, product_name: 'メカニカルキーボード', unit_price: 12800, quantity: 1 },
   ],
-  subtotal: 12800,
-  applied_coupon_code: null,
-  discount_amount: 0,
-  total: 12800,
-}
-
-const discounted: Cart = {
-  ...baseCart,
-  applied_coupon_code: 'SPRING10',
-  discount_amount: 1000,
-  total: 11800,
+  subtotal: 18760,
 }
 
 function renderCart() {
@@ -41,78 +32,35 @@ function renderCart() {
 }
 
 describe('CartPage', () => {
-  it('クーポンを適用すると割引額と支払金額が表示される', async () => {
-    let cart = baseCart
-    mockFetch({
-      'GET /api/cart': () => ({ body: cart }),
-      'POST /api/cart/coupon': (req) => {
-        expect(req).toEqual({ coupon_code: 'SPRING10' })
-        cart = discounted
-        return {
-          body: {
-            coupon_code: 'SPRING10',
-            eligible_subtotal: 12800,
-            discount_amount: 1000,
-            subtotal: 12800,
-            total: 11800,
-          },
-        }
-      },
-    })
+  it('明細ごとの小計と支払金額を表示する', async () => {
+    mockFetch({ 'GET /api/cart': () => ({ body: baseCart }) })
     renderCart()
 
-    await userEvent.type(await screen.findByLabelText('クーポンコード'), ' SPRING10 ')
-    await userEvent.click(screen.getByRole('button', { name: '適用' }))
-
-    expect(await screen.findByText('SPRING10')).toBeInTheDocument()
-    expect(screen.getByText('−1,000円')).toBeInTheDocument()
-    expect(screen.getByText('11,800円')).toBeInTheDocument()
+    expect(await screen.findByText('5,960円')).toBeInTheDocument()
+    expect(screen.getByText('18,760円')).toBeInTheDocument()
   })
 
-  it('適用できないクーポンはバックエンドのエラー文言を表示する', async () => {
-    mockFetch({
-      'GET /api/cart': () => ({ body: baseCart }),
-      'POST /api/cart/coupon': () => ({
-        status: 422,
-        body: { detail: '最低購入金額を満たしていません' },
-      }),
-    })
+  it('空のカートでは注文ボタンを出さない', async () => {
+    mockFetch({ 'GET /api/cart': () => ({ body: { items: [], subtotal: 0 } }) })
     renderCart()
 
-    await userEvent.type(await screen.findByLabelText('クーポンコード'), 'FLAT500')
-    await userEvent.click(screen.getByRole('button', { name: '適用' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      '最低購入金額を満たしていません',
-    )
+    expect(await screen.findByText('カートは空です。')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '注文を確定する' })).toBeNull()
   })
 
-  it('適用中のクーポンが条件を満たさなくなったら警告を出す', async () => {
-    mockFetch({
-      'GET /api/cart': () => ({
-        body: { ...baseCart, applied_coupon_code: 'SPRING10', discount_amount: 0 },
-      }),
-    })
-    renderCart()
-
-    expect(await screen.findByText(/適用条件を満たしていません/)).toBeInTheDocument()
-  })
-
-  it('注文確定時に表示中の支払金額を expected_total として送る', async () => {
+  it('注文を確定すると注文完了画面へ進む', async () => {
     const checkout = vi.fn(() => ({
       status: 201,
       body: {
         id: 1,
         status: 'confirmed',
-        subtotal: 12800,
-        coupon_code: 'SPRING10',
-        discount_amount: 1000,
-        items: discounted.items,
+        subtotal: 18760,
+        items: baseCart.items,
         created_at: '2026-09-27T00:00:00',
       },
     }))
     mockFetch({
-      'GET /api/cart': () => ({ body: discounted }),
+      'GET /api/cart': () => ({ body: baseCart }),
       'POST /api/orders': checkout,
     })
     renderCart()
@@ -120,7 +68,19 @@ describe('CartPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: '注文を確定する' }))
 
     expect(await screen.findByText('注文完了画面')).toBeInTheDocument()
-    expect(checkout).toHaveBeenCalledWith({ expected_total: 11800 })
+    expect(checkout).toHaveBeenCalledOnce()
+  })
+
+  it('注文を確定できなければバックエンドのエラー文言を表示する', async () => {
+    mockFetch({
+      'GET /api/cart': () => ({ body: baseCart }),
+      'POST /api/orders': () => ({ status: 400, body: { detail: 'カートが空です' } }),
+    })
+    renderCart()
+
+    await userEvent.click(await screen.findByRole('button', { name: '注文を確定する' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('カートが空です')
   })
 
   it('トークン切れ（401）ならログアウトする', async () => {

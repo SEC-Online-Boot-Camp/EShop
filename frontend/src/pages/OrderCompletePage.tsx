@@ -32,16 +32,8 @@ export function OrderCompletePage() {
         </tbody>
       </table>
       <dl className="summary">
-        <dt>小計</dt>
-        <dd>{yen(order.subtotal)}</dd>
-        {order.coupon_code && (
-          <>
-            <dt>割引（{order.coupon_code}）</dt>
-            <dd>−{yen(order.discount_amount)}</dd>
-          </>
-        )}
         <dt className="total">お支払い金額</dt>
-        <dd className="total">{yen(order.subtotal - order.discount_amount)}</dd>
+        <dd className="total">{yen(order.subtotal)}</dd>
       </dl>
       <Link to="/">商品一覧に戻る</Link>
     </section>

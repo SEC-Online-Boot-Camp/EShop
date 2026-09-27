@@ -64,8 +64,8 @@ status: draft | active # 省略時は active。draft は整備中でレビュー
 
 ## レビューの流れ
 
-`claude-review.yml` は PR の作成時・更新時に、次の3つのジョブを順に実行します。
-fork からの PR には secrets が渡らないため、レビューはスキップします。
+`claude-review.yml` は PR の作成時・更新時・Ready for review にしたときに、次の3つのジョブを順に実行します。
+fork からの PR には secrets が渡らないため、レビューはスキップします。変数・ラベル・下書きで止めることもできます（「レビューを止めるには」を参照）。
 
 1. **工程・スタックの判定**（`resolve`）— ラベル、または変更されたファイルのパスから、工程とスタックを決める。
 2. **Markdown の書式チェック**（`format-check`）— 変更された `.md` を linter で機械的に検査する。変更された `.md` がなければツールも入れずに終える。
@@ -106,6 +106,29 @@ PR に `stack:<スタック>` ラベルが付いていれば、それを使い�
 | `frontend/` の `.ts`・`.tsx`・`package.json` | `typescript-react` |
 
 どちらにも当たらなければ（`docs/` だけの PR など）、スタックの観点は合成しません。
+
+## レビューを止めるには
+
+次の3つのどれかに当たると、書式チェックと Claude によるレビューを動かしません。
+失敗ではなく**スキップ**になり、「設定によりレビューをスキップ」ジョブがどの理由で止めたかを notice で1行出します。
+
+| 方法 | 止まる範囲 | 使い方 |
+| :--- | :--- | :--- |
+| リポジトリ変数 `CLAUDE_REVIEW_ENABLED` を `false` にする | すべての PR | 下記のコマンド、または Settings → Secrets and variables → Actions → Variables で設定する |
+| PR に `skip-review` ラベルを付ける | その PR だけ | **PR を作るときに付ける**。後から付けた場合は、次の push から効く |
+| PR を draft（下書き）にする | その PR だけ | draft の間は動かない。Ready for review にした時点でレビューが動く |
+
+- ラベルの付け外しではワークフローが起動しません（トリガーに `labeled` を含めていないため）。そのため、作成後にラベルを付けても、次の push までは何も起きません。外した場合も、次の push からレビューが動きます。
+- リポジトリ変数は既定では作っていません。**未設定のときはレビューが動きます。**
+
+```bash
+# 全 PR でレビューを止める
+gh variable set CLAUDE_REVIEW_ENABLED --body false -R SEC-Online-Boot-Camp/EShop
+
+# 元に戻す（変数を削除するか、true にする）
+gh variable delete CLAUDE_REVIEW_ENABLED -R SEC-Online-Boot-Camp/EShop
+gh variable set CLAUDE_REVIEW_ENABLED --body true -R SEC-Online-Boot-Camp/EShop
+```
 
 ## 合成モデル
 

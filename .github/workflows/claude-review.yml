@@ -6,10 +6,18 @@ name: Claude Review
 #
 # 必要な secrets（リポジトリの Settings → Secrets and variables → Actions に登録する）:
 #   CLAUDE_CODE_OAUTH_TOKEN : Claude Code の OAuth トークン
+#
+# レビューを止める方法（止めたときは失敗ではなくスキップ。理由は skip-notice ジョブが notice で出す）:
+#   - リポジトリ変数 CLAUDE_REVIEW_ENABLED を false にする（全 PR で止まる。未設定なら動く）
+#   - PR に skip-review ラベルを付ける。トリガーに labeled を含めていないので、
+#     PR を作るときに付けるか、付けた後の次の push から効く
+#   - draft の PR では動かさない。Ready for review にした時点で動く
+# 詳細は .github/review/README.md の「レビューを止めるには」。
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    # labeled は意図して含めない（ラベルの付け外しのたびにレビューが走らないように）
+    types: [opened, synchronize, ready_for_review]
 
 permissions:
   contents: read
@@ -32,9 +40,38 @@ jobs:
     steps:
       - run: echo "::notice::fork からの PR には secrets が渡らないため、Claude によるレビューはスキップします。"
 
+  skip-notice:
+    # 変数・ラベル・下書きでレビューを止めたときに、理由を notice で1行出す（失敗ではなくスキップ扱い）。
+    # 条件は resolve の if のちょうど裏返しにしておくこと。
+    name: 設定によりレビューをスキップ
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (vars.CLAUDE_REVIEW_ENABLED == 'false' ||
+       contains(github.event.pull_request.labels.*.name, 'skip-review') ||
+       github.event.pull_request.draft)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - env:
+          BY_VARIABLE: ${{ vars.CLAUDE_REVIEW_ENABLED == 'false' }}
+          BY_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'skip-review') }}
+          BY_DRAFT: ${{ github.event.pull_request.draft }}
+        run: |
+          reasons=()
+          [ "$BY_VARIABLE" = "true" ] && reasons+=("リポジトリ変数 CLAUDE_REVIEW_ENABLED が false")
+          [ "$BY_LABEL" = "true" ] && reasons+=("skip-review ラベルが付いている")
+          [ "$BY_DRAFT" = "true" ] && reasons+=("draft の PR（Ready for review にすると動きます）")
+          reason=$(printf '%s、' "${reasons[@]}")
+          echo "::notice::Claude によるレビューと書式チェックをスキップします（理由: ${reason%、}）。"
+
   resolve:
     name: 工程・スタックの判定
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # 以降のジョブ（format-check・review）は needs で resolve に依存するので、ここがスキップされれば一緒にスキップされる
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      vars.CLAUDE_REVIEW_ENABLED != 'false' &&
+      !contains(github.event.pull_request.labels.*.name, 'skip-review') &&
+      !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:

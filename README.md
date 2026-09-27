@@ -30,6 +30,7 @@ No.3では実装作業は行いません。この実装に対して**試験観�
 | `backend/` | FastAPI のバックエンド（API・テスト） |
 | `frontend/` | React + TypeScript + Vite の画面（クーポンの適用・解除を含む）。詳細は [frontend/README.md](frontend/README.md) |
 | `.github/workflows/` | CI（テスト・画面チェック・既存テストの書き換え検知）と、Claude による PR レビュー |
+| `.github/review/` | Claude による PR レビューの観点と、Markdown の書式チェックの設定。詳細は [.github/review/README.md](.github/review/README.md) |
 
 ## セットアップ
 

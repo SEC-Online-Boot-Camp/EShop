@@ -1,3 +1,5 @@
+# uv を使わずに pip で環境を作る場合の依存（pyproject.toml と同じ版に固定している）。
+# 版を変えるときは、pyproject.toml・uv.lock（uv lock）・このファイルをそろえて更新する。
 fastapi==0.141.1
 starlette==1.6.0
 uvicorn[standard]==0.52.4
@@ -10,3 +12,4 @@ pytest==9.1.1
 pytest-cov==7.1.0
 httpx==0.28.1
 mutmut==2.5.1
+ruff==0.16.9

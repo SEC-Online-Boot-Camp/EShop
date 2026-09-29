@@ -29,8 +29,9 @@ No.3では実装作業は行いません。この実装に対して**試験観�
 | :--- | :--- |
 | `backend/` | FastAPI のバックエンド（API・テスト） |
 | `frontend/` | React + TypeScript + Vite の画面（クーポンの適用・解除を含む）。詳細は [frontend/README.md](frontend/README.md) |
-| `.github/workflows/` | CI（テスト・画面チェック・既存テストの書き換え検知）と、Claude による PR レビュー |
-| `.github/review/` | Claude による PR レビューの観点と、Markdown の書式チェックの設定。詳細は [.github/review/README.md](.github/review/README.md) |
+| `.vscode/` | VS Code のテストパネルで、backend の pytest を `backend/` から動かす設定 |
+
+CI と Claude による PR レビュー（`.github/`）は講座では使わないため、`github-config` ブランチに残しています。
 
 ## セットアップ
 
@@ -53,6 +54,13 @@ No.1で作ったDBをそのまま使うと、注文確定で`table orders has no
 `python -m app.seed`はユーザー2件・商品5件・クーポン6件を投入します。
 `pytest` は既存テスト55件がすべてPASSします。これが**回帰試験の基準線**です。
 No.3で追加するテストを含めて全件PASSするところまで持っていくのが最終ゴールになります。
+
+バックエンドの依存は `backend/pyproject.toml` と `backend/uv.lock` で固定しています。[uv](https://docs.astral.sh/uv/) を使う場合は、`backend/` で次を実行すると、`backend/.venv` に同じ環境ができます（pip を使う場合は、同じ版の `backend/requirements.txt` を使います）。
+
+```powershell
+cd backend
+uv sync
+```
 
 画面も使う場合は、バックエンドを起動したうえで別のターミナルで次を実行し、<http://localhost:5173> を開きます
 （Node.js 24 以降が必要）。

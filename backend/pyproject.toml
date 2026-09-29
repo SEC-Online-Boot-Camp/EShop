@@ -1,2 +1,37 @@
+[project]
+name = "eshop-backend"
+version = "0.1.0"
+requires-python = ">=3.14"
+# 既存テストの結果を基準線として再現するため、全パッケージをバージョン固定している（TESTING.md 参照）
+dependencies = [
+    "fastapi==0.141.1",
+    "starlette==1.6.0",
+    "uvicorn[standard]==0.52.4",
+    "sqlalchemy==2.0.52",
+    "pydantic==2.13.5",
+    "python-jose[cryptography]==3.5.0",
+    "bcrypt==5.0.0",
+    "python-dotenv==1.2.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "httpx==0.28.1",
+    "mutmut==2.5.1",
+    "ruff==0.16.9",
+]
+
+[tool.uv]
+# アプリはパッケージとして配布しないので、依存だけを入れる
+package = false
+
+[tool.ruff.lint]
+# 既存のコードを書き換えずに通る範囲にとどめる（構文・未使用・import の並び）。
+# B008（Depends を引数の既定値に書く）や UP017（datetime.UTC）は、FastAPI・SQLAlchemy の書き方を
+# 今どきの形に直すときに合わせて広げる
+select = ["E4", "E7", "E9", "F", "I"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]

@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = 'd8b839c1（2026-09-30 配備）'
+$script:ScriptVersion = '0d135d1d（2026-09-30 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -1450,6 +1450,15 @@ $script:VenvNote
   claude の対話中に /security-review を実行する（couponの変更に対して）
 "@ `
         -Expect 'コマンドが存在し、レビュー結果が返る。使えない場合は03-00と03-03の案内を落とす'
+
+    New-Step -Id '5-11' -Ch '5' -Title 'hookで既存テストへの書き込みが止まるか（手動）' -Kind manual -Site materials `
+        -Purpose '03-02の手順2で、受講者がAIに作らせたhookで既存テストを守る' `
+        -Show @"
+  03-02の手順2のプロンプトでhookを作らせる（.claude/settings.json の作成で確認が出る）
+  VS Codeで Developer: Reload Window のあと、既存の backend/tests/test_orders.py に書き足させる
+  backendで : git diff --stat -- tests
+"@ `
+        -Expect '理由付きで止まり、git diff --stat -- tests が空。新しいテストファイルは作れる。所要（目安10〜15分）も記録する'
 
     # ====================== 6章 所要時間 ======================
 

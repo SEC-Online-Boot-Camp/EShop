@@ -20,9 +20,9 @@ AI活用入門講座（SW編）の**No.1・No.2**で使用する、既存ECサ�
 | :--- | :--- |
 | `backend/` | FastAPI のバックエンド（API・テスト） |
 | `frontend/` | React + TypeScript + Vite の画面。詳細は [frontend/README.md](frontend/README.md) |
-| `.github/workflows/` | CI（テスト・画面チェック・既存テストの書き換え検知）と、Claude による PR レビュー |
-| `.github/review/` | Claude による PR レビューの観点と、Markdown の書式チェックの設定。詳細は [.github/review/README.md](.github/review/README.md) |
 | `.vscode/` | VS Code のテストパネルで、backend の pytest を `backend/` から動かす設定 |
+
+CI と Claude による PR レビュー（`.github/`）は講座では使わないため、`github-config` ブランチに残しています。
 
 ## セットアップ
 

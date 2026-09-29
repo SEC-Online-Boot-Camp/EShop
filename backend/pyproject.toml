@@ -1,7 +1,7 @@
 [project]
 name = "eshop-backend"
 version = "0.1.0"
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 # 既存テストの結果を基準線として再現するため、全パッケージをバージョン固定している（TESTING.md 参照）
 dependencies = [
     "fastapi==0.141.1",

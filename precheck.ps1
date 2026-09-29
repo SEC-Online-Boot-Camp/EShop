@@ -16,7 +16,7 @@
     配備先は公開リポジトリで、受講者からも参照できる（普通の git clone でも
     リモート追跡ブランチとして付いてくる）。受講者に伏せる情報はここに書かない。
 
-    リハーサル機での取得（作業ツリーに main / No3 は展開されない）
+    リハーサル機での取得（作業ツリーに main / coupon は展開されない）
 
         git clone -b rehearsal --single-branch https://github.com/SEC-Online-Boot-Camp/EShop.git EShop-rehearsal
         cd EShop-rehearsal
@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '7265fa58（2026-09-19 配備）'
+$script:ScriptVersion = 'c7cf50f6（2026-09-29 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -221,7 +221,7 @@ function Hide-NetworkInfo([string]$Text) {
 # このスクリプト自身は venv の python を絶対パスで呼ぶため activate を必要としない。
 $script:VenvNote = @'
   実行ポリシーが Restricted の機材では activate（Activate.ps1）が弾かれるため、
-  src へ移動して .venv\Scripts\ の実行ファイルを直接呼ぶ形が確実。
+  backend へ移動して .venv\Scripts\ の実行ファイルを直接呼ぶ形が確実。
   (.venv) の表示が要るときだけ、01-01手順書の代替1行を手打ちする（4-3-07 参照）。
 '@
 
@@ -890,8 +890,8 @@ function Set-StepList {
         } `
         -Hint {
             param($text)
-            if (Test-Path (Join-Path $script:RepoDir 'src')) {
-                Write-Mark 'OK' 'cloneできている（srcが見える）'
+            if (Test-Path (Join-Path $script:RepoDir 'backend')) {
+                Write-Mark 'OK' 'cloneできている（backendが見える）'
                 return 'OK'
             }
             Write-Mark 'NG' 'cloneできていない。github.com への到達を3-4で確認する'
@@ -900,7 +900,7 @@ function Set-StepList {
 
     New-Step -Id '4-3-06' -Ch '4' -Title '仮想環境の作成' -Kind auto -TimeKey 'venv' `
         -Expect '.venv が作られる（社内実測8.5秒）' `
-        -Show 'cd src ; python -m venv .venv' `
+        -Show 'cd backend ; python -m venv .venv' `
         -Cmd { Invoke-InSrc { python -m venv .venv 2>&1; "作成先: $(Join-Path $PWD '.venv')" } } `
         -Hint {
             param($text)
@@ -1030,7 +1030,7 @@ function Set-StepList {
             if ($text -match 'ユーザー2件・商品5件') { Write-Mark 'OK' '期待どおりの件数'; return 'OK' }
             if ($text -match 'すでにデータが投入されています') {
                 Write-Mark '保留' 'DBが残っているため投入をスキップした。件数を確認できていない'
-                Write-Host '        やり直す場合はsrcの ecommerce.db を消してから再実行する' -ForegroundColor Yellow
+                Write-Host '        やり直す場合はbackendの ecommerce.db を消してから再実行する' -ForegroundColor Yellow
                 return '保留'
             }
             Write-Mark 'NG' '期待する件数（ユーザー2件・商品5件）が出ていない'
@@ -1233,42 +1233,42 @@ $script:VenvNote
         } `
         -SkipImpact 'スキップすると 4-4-03（成果物の確認）以降と5章の#5が実施できない'
 
-    New-Step -Id '4-4-02' -Ch '4' -Title 'No3ブランチの取得と切り替え' -Kind auto -TimeKey 'fetch' `
+    New-Step -Id '4-4-02' -Ch '4' -Title 'couponブランチの取得と切り替え' -Kind auto -TimeKey 'fetch' `
         -Purpose 'ここで再びネットワークを使う。No.1が通っても省略しない' `
-        -Expect 'git branch --show-current がNo3' `
-        -Show 'git fetch origin ; git switch No3 ; git branch --show-current' `
+        -Expect 'git branch --show-current がcoupon' `
+        -Show 'git fetch origin ; git switch coupon ; git branch --show-current' `
         -Cmd {
             Invoke-InRepo {
                 git fetch origin 2>&1 | ForEach-Object { "$_" }
-                git switch No3 2>&1 | ForEach-Object { "$_" }
+                git switch coupon 2>&1 | ForEach-Object { "$_" }
                 "current = $(git branch --show-current)"
             }
         } `
         -Hint {
             param($text)
-            if ($text -match 'current = No3') { Write-Mark 'OK' 'No3に切り替わっている'; return 'OK' }
-            Write-Mark 'NG' 'No3に切り替わっていない'
+            if ($text -match 'current = coupon') { Write-Mark 'OK' 'couponに切り替わっている'; return 'OK' }
+            Write-Mark 'NG' 'couponに切り替わっていない'
             return 'NG'
         }
 
     New-Step -Id '4-4-03' -Ch '4' -Title '切り替え後のファイル確認' -Kind auto `
-        -Purpose 'No3への切り替えでcoupon.pyが増え、No.2の成果物（docs）が残っていることを確認する' `
-        -Expect '両方がsrcから見つかること' `
+        -Purpose 'couponへの切り替えでcoupon.pyが増え、No.2の成果物（docs）が残っていることを確認する' `
+        -Expect '両方がbackendから見つかること' `
         -Show @"
-  srcで : Get-ChildItem app\coupon.py
-  srcで : Get-ChildItem ..\docs
+  backendで : Get-ChildItem app\coupon.py
+  backendで : Get-ChildItem ..\docs
 
-  03-01の手順0と同じ場所・同じ書き方で見る。docsはEShop直下にあるため src からは ..\docs。
+  03-01の手順0と同じ場所・同じ書き方で見る。docsはEShop直下にあるため backend からは ..\docs。
 "@ `
         -Cmd {
             # Select-Object で出すと、PowerShell の表組みが1つ目のオブジェクトで列を決めるため、
             # FullName,Length のあとの Name,Length が空欄になり、Hint がファイル名を見つけられない。
             # 文字列にして切り離す。
             Invoke-InSrc {
-                'src:'
+                'backend:'
                 Get-ChildItem 'app\coupon.py' -ErrorAction SilentlyContinue |
                     ForEach-Object { "  {0}  {1} bytes" -f $_.Name, $_.Length }
-                'src から ..\docs:'
+                'backend から ..\docs:'
                 Get-ChildItem '..\docs' -ErrorAction SilentlyContinue |
                     ForEach-Object { "  {0}  {1} bytes" -f $_.Name, $_.Length }
             }
@@ -1278,11 +1278,11 @@ $script:VenvNote
             $hasCoupon = $text -match 'coupon\.py'
             $hasDocs = $text -match '要件整理メモ|クーポンAPI設計書'
             if (-not $hasCoupon) {
-                Write-Mark 'NG' 'app\coupon.py が無い。No3への切り替え（4-4-02）を確認する'
+                Write-Mark 'NG' 'app\coupon.py が無い。couponへの切り替え（4-4-02）を確認する'
                 return 'NG'
             }
             if ($hasDocs) {
-                Write-Mark 'OK' '両方ある（03-01の手順0どおり、srcから通る）'
+                Write-Mark 'OK' '両方ある（03-01の手順0どおり、backendから通る）'
                 return 'OK'
             }
             # 4-4-01 を実施していなければ docs は無いのが当然なので、NGではなく保留にする
@@ -1312,7 +1312,7 @@ $script:VenvNote
                 return 'NG'
             }
             if ($text -notmatch 'クーポン') {
-                Write-Mark 'NG' 'クーポン件数が出ていない。No3ブランチに切り替わっているか確認する'
+                Write-Mark 'NG' 'クーポン件数が出ていない。couponブランチに切り替わっているか確認する'
                 return 'NG'
             }
             if ($text -match 'ユーザー2件・商品5件・クーポン6件') { Write-Mark 'OK' '期待どおりの件数'; return 'OK' }
@@ -1344,7 +1344,7 @@ $script:VenvNote
             return 'NG'
         }
 
-    # 4-5 を 4-4-05 と 4-4-06 の間に置いてあるのは実行順のため（No3のseedが済んでいないと
+    # 4-5 を 4-4-05 と 4-4-06 の間に置いてあるのは実行順のため（couponのseedが済んでいないと
     # 注文が通らない）。記録の並びが 4-4-05 → 4-5 → 4-4-06 になるのは意図したもの。
     New-Step -Id '4-5' -Ch '4' -Title 'Swagger UIでの注文確定（手動）' -Kind manual `
         -Purpose 'pytestは別DBを使うため、ecommerce.db の削除漏れはここでしか表面化しない' `
@@ -1354,7 +1354,7 @@ $script:VenvNote
        .venv\Scripts\uvicorn.exe app.main:app --reload
 $script:VenvNote
   2. POST /auth/login を実行し、access_tokenを控える
-     （ログイン情報は src/app/seed.py に定義されている。README.md には無い）
+     （ログイン情報は backend/app/seed.py に定義されている。README.md には無い）
   3. 画面右上のAuthorizeにトークンを貼る
   4. POST /cart/items で商品を1件カートに追加する
   5. POST /orders を実行する
@@ -1439,7 +1439,7 @@ $script:VenvNote
 
     New-Step -Id '5-9' -Ch '5' -Title '.envの抽象化後にアプリが動くか' -Kind manual -Site materials `
         -Show @"
-  01-04-機密情報の抽象化手順.md の手順3を実施したあと、srcでpytestを実行する。
+  01-04-機密情報の抽象化手順.md の手順3を実施したあと、backendでpytestを実行する。
   （このスクリプトの 4-3-11 と同じコマンド）
 "@ `
         -Expect '全件PASS。DATABASE_URLは置換しない'
@@ -1447,7 +1447,7 @@ $script:VenvNote
     New-Step -Id '5-10' -Ch '5' -Title '/security-review が使えるか（手動）' -Kind manual -Site materials `
         -Purpose '03-00のスライドで1ページ紹介し、03-03でも「時間が余ったら試す」と案内している' `
         -Show @"
-  claude の対話中に /security-review を実行する（No3の変更に対して）
+  claude の対話中に /security-review を実行する（couponの変更に対して）
 "@ `
         -Expect 'コマンドが存在し、レビュー結果が返る。使えない場合は03-00と03-03の案内を落とす'
 
@@ -1465,7 +1465,7 @@ $script:VenvNote
         -Show @"
   git status --porcelain
   git diff --name-only -- .env .gitignore
-  git log @{u}..HEAD --oneline     # 追跡ブランチとの差（No3にいてもmainと比べない）
+  git log @{u}..HEAD --oneline     # 追跡ブランチとの差（couponにいてもmainと比べない）
   git remote -v
 "@ `
         -Cmd {
@@ -1727,8 +1727,8 @@ function Show-Timings {
         @{ Key = 'pip';         Label = 'pip install -r requirements';   Ref = '社内31.4秒' }
         @{ Key = 'seed';        Label = 'python -m app.seed（main）';     Ref = '社内1.9秒' }
         @{ Key = 'pytest-main'; Label = 'pytest（54件）';                 Ref = '社内8.6秒' }
-        @{ Key = 'fetch';       Label = 'git fetch + switch No3';        Ref = '' }
-        @{ Key = 'seed-no3';    Label = 'DB削除 + seed（No3）';           Ref = '' }
+        @{ Key = 'fetch';       Label = 'git fetch + switch coupon';        Ref = '' }
+        @{ Key = 'seed-no3';    Label = 'DB削除 + seed（coupon）';           Ref = '' }
         @{ Key = 'pytest-no3';  Label = 'pytest（55件）';                 Ref = '' }
     )
     Write-Host ''
@@ -1913,7 +1913,7 @@ function Get-DefaultBase {
 $script:DefaultBase = if ($WorkDir -and $OutDir) { $null } else { Get-DefaultBase }
 $script:WorkRoot = if ($WorkDir) { $WorkDir } else { $script:DefaultBase }
 $script:RepoDir = Join-Path $script:WorkRoot 'EShop'
-$script:SrcDir = Join-Path $script:RepoDir 'src'
+$script:SrcDir = Join-Path $script:RepoDir 'backend'
 $script:OutRoot = if ($OutDir) { $OutDir } else { $script:DefaultBase }
 $script:MaterialRoot = if ($MaterialDir) { $MaterialDir } elseif ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 # 7-2-b で「開始時点に戻す」ために、いまのUser環境変数を控える。

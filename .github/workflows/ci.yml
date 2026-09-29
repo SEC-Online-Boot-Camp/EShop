@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   test:
-    name: テスト（pytest）
+    name: テスト（Ruff・pytest）
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -27,14 +27,23 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
       - name: 依存パッケージのインストール
-        run: pip install -r requirements.txt
+        run: uv sync --locked
+
+      - name: lint（Ruff）
+        run: uv run ruff check .
+
+      - name: 書式（Ruff）
+        run: uv run ruff format --check .
 
       - name: テスト実行（カバレッジ付き）
-        run: python -m pytest --cov=app --cov-report=term-missing
+        run: uv run python -m pytest --cov=app --cov-report=term-missing
 
   frontend:
     name: 画面（lint・型チェック・ビルド・テスト）

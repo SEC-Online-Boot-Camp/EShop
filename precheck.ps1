@@ -82,7 +82,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = 'c7cf50f6（2026-09-29 配備）'
+$script:ScriptVersion = 'd8b839c1（2026-09-30 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -1461,10 +1461,10 @@ $script:VenvNote
 
     New-Step -Id '7-1' -Ch '7' -Title 'リポジトリに差分が残っていないか' -Kind auto `
         -Purpose '抽象化済みの .env が共有リポジトリに入ると以降の受講者の演習が成立しない' `
-        -Expect '追跡ファイル（.env / .gitignore / CLAUDE.md）に変更が無く、未pushのコミットも無い' `
+        -Expect '追跡ファイル（backend/.env・backend/.gitignore）に変更が無く、未pushのコミットも無い' `
         -Show @"
   git status --porcelain
-  git diff --name-only -- .env .gitignore
+  git diff --name-only -- backend/.env backend/.gitignore
   git log @{u}..HEAD --oneline     # 追跡ブランチとの差（couponにいてもmainと比べない）
   git remote -v
 "@ `
@@ -1474,12 +1474,12 @@ $script:VenvNote
                 $all = @(git status --porcelain 2>&1 | ForEach-Object { "$_" } | Where-Object { $_ })
                 $tracked = @($all | Where-Object { $_ -notmatch '^\?\?' })
                 $untracked = @($all | Where-Object { $_ -match '^\?\?' })
-                '--- 追跡ファイルの変更（.env・.gitignore・CLAUDE.md など）---'
+                '--- 追跡ファイルの変更（backend/.env・backend/.gitignore など）---'
                 if ($tracked.Count -eq 0) { '（変更なし）' } else { $tracked }
                 '--- 未追跡ファイル（演習の副産物。クローン削除で消える）---'
                 if ($untracked.Count -eq 0) { '（なし）' } else { $untracked }
                 '--- .env / .gitignore の差分 ---'
-                $df = @(git diff --name-only -- .env .gitignore 2>&1 | ForEach-Object { "$_" } | Where-Object { $_ })
+                $df = @(git diff --name-only -- backend/.env backend/.gitignore 2>&1 | ForEach-Object { "$_" } | Where-Object { $_ })
                 if ($df.Count -eq 0) { '（差分なし）' } else { $df }
                 '--- 未pushのコミット ---'
                 $up = (git rev-parse --abbrev-ref '@{u}' 2>&1)

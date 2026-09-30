@@ -10,10 +10,11 @@
     管理者権限は不要。機材の状態を変えるステップは <設定変更> と表示され、
     既定はスキップで、明示的にyを押したときだけ実行する。
 
-    このファイルの正本は教材リポジトリ側にあり、ここへは配備されたものが置かれる。
-    直すときは正本を直し、deploy-rehearsal.py で配備する。
+    このブランチ（EShop の rehearsal）が正本で、直すときはここを直接直す。
+    ステップ番号と期待値は事前確認書（教材リポジトリ）と対になっているので、対で保守する。
+    push する前に check-publish.py を通す。
 
-    配備先は公開リポジトリで、受講者からも参照できる（普通の git clone でも
+    このブランチは公開リポジトリにあり、受講者からも参照できる（普通の git clone でも
     リモート追跡ブランチとして付いてくる）。受講者に伏せる情報はここに書かない。
 
     リハーサル機での取得（作業ツリーに main / coupon は展開されない）
@@ -105,9 +106,39 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
-# 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
-# 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '53d31641（2026-09-30 配備）'
+function Get-ScriptVersion {
+    # 版は実行時に git から読む。記録を読んだ人が、どの版で走らせた結果かを突き止められるようにする。
+    # clone した作業ツリーから実行したときは、このファイルを最後に変えたコミットを版とする。
+    # 受講者のPCで precheck.ps1 だけを git archive で取り出したとき（講座当日の診断）は履歴が
+    # 無いので、中身の blob ID を版とする。hash-object は autocrlf の変換を通すので、checkout や
+    # archive で改行が CRLF になっていても、追跡中の blob と同じ値になる。どのコミットの版かは、
+    # このブランチの clone で git log --all --find-object=<blob> を実行すれば分かる。
+    # 版が読めなくても本来の確認は続けたいので、どの経路でも例外で止めない。$ErrorActionPreference が
+    # Continue でも git のエラー出力が画面に出ないよう、2>$null で捨てる。
+    $dir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+    $name = if ($PSCommandPath) { Split-Path $PSCommandPath -Leaf } else { 'precheck.ps1' }
+    # PowerShell 7.3 以降でこれが有効だと、git の終了コードが 0 以外のときにエラーが画面に出る
+    $PSNativeCommandUseErrorActionPreference = $false
+    if (-not (Get-Command git -CommandType Application -ErrorAction SilentlyContinue)) { return '不明（gitが見つからない）' }
+    try {
+        # %cs（コミット日）は古い git では展開されない。形が合わなければ blob ID に回す
+        $log = "$(& git -C $dir log -1 --format='%h %cs' -- $name 2>$null)".Trim()
+        if ($LASTEXITCODE -eq 0 -and $log -match '^[0-9a-f]{7,} \d{4}-\d{2}-\d{2}$') {
+            $st = "$(& git -C $dir status --porcelain -- $name 2>$null)".Trim()
+            if ($st) { $log += ' ※未コミットの変更あり' }
+            return $log
+        }
+        # 起動方法3でカレントが置き場でないときは、ここでファイルが見つからずに不明になる
+        $file = Join-Path $dir $name
+        if (Test-Path -LiteralPath $file -PathType Leaf) {
+            $blob = "$(& git -C $dir hash-object -- $file 2>$null)".Trim()
+            if ($LASTEXITCODE -eq 0 -and $blob -match '^[0-9a-f]{40,}$') { return "blob $($blob.Substring(0, 7))" }
+        }
+    } catch { }
+    return '不明（gitから読み取れない）'
+}
+
+$script:ScriptVersion = Get-ScriptVersion
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -1238,23 +1269,38 @@ $script:VenvNote
 
     New-Step -Id '4-4-01' -Ch '4' -Title 'No.2成果物の配置（ダミーで代用）' -Kind change `
         -Purpose 'No.3の手順書はNo.2の成果物を参照する。無いと4-4の手順6以降と5章の#5が実行できない' `
-        -Expect 'docs/要件整理メモ.md と docs/クーポンAPI設計書.md が置かれる' `
+        -Expect 'docs/要件整理メモ.md が置かれ、docs/基本設計書.md の末尾にクーポン機能の章が追記される' `
         -Show @"
-  New-Item -ItemType Directory -Force docs
-  Copy-Item <rehearsalブランチ>\docs-template\*.md docs\
+  Copy-Item <rehearsalブランチ>\docs-template\要件整理メモ.md docs\
+  docs\基本設計書.md の末尾に <rehearsalブランチ>\docs-template\基本設計書.md を追記する
 
   リハーサルではNo.2の演習を行わないため、rehearsalブランチのダミー成果物で代用する。
+  docs/基本設計書.md は配布時から入っている既存機能の設計書で、受講者はこれに追記する。
+  上書きせず追記するのはそのためで、すでに追記済みなら二重には足さない。
   中身の妥当性は問わず、手順が実行できるかの確認が目的。
   解答例は講師専用資料なので、この経路では使わない。
 "@ `
         -Cmd {
             Invoke-InRepo {
                 $tpl = Join-Path $script:MaterialRoot 'docs-template'
-                $files = @(Get-ChildItem (Join-Path $tpl '*.md') -ErrorAction SilentlyContinue)
-                if ($files.Count -eq 0) { "docs-template が見つからない: $tpl（-MaterialDir で指定する）"; return }
+                $memo = Join-Path $tpl '要件整理メモ.md'
+                $add = Join-Path $tpl '基本設計書.md'
+                if (-not (Test-Path $memo) -or -not (Test-Path $add)) { "docs-template が見つからない: $tpl（-MaterialDir で指定する）"; return }
+                $doc = Join-Path (Get-Location).Path 'docs\基本設計書.md'
+                if (-not (Test-Path $doc)) { "配布時の設計書が無い: $doc（EShop が古いか、ブランチが違う）"; return }
                 New-Item -ItemType Directory -Force docs | Out-Null
-                $files | ForEach-Object { Copy-Item $_.FullName (Join-Path 'docs' $_.Name) -Force }
-                Get-ChildItem docs | Select-Object Name, Length
+                Copy-Item $memo (Join-Path 'docs' '要件整理メモ.md') -Force
+                $utf8 = New-Object System.Text.UTF8Encoding $false
+                $body = [System.IO.File]::ReadAllText($add, $utf8).TrimStart([char]0xFEFF)
+                $heading = ($body -split "`r?`n" | Where-Object { $_ -match '^#' } | Select-Object -First 1)
+                $now = [System.IO.File]::ReadAllText($doc, $utf8)
+                if ($heading -and $now.Contains($heading)) {
+                    "追記済みのため足さない: $heading"
+                } else {
+                    [System.IO.File]::AppendAllText($doc, "`n" + $body, $utf8)
+                    "追記した: $heading"
+                }
+                Get-ChildItem docs | ForEach-Object { "  {0}  {1} bytes" -f $_.Name, $_.Length }
             }
         } `
         -SkipImpact 'スキップすると 4-4-03（成果物の確認）以降と5章の#5が実施できない'
@@ -1278,7 +1324,7 @@ $script:VenvNote
         }
 
     New-Step -Id '4-4-03' -Ch '4' -Title '切り替え後のファイル確認' -Kind auto `
-        -Purpose 'couponへの切り替えでcoupon.pyが増え、No.2の成果物（docs）が残っていることを確認する' `
+        -Purpose 'couponへの切り替えでcoupon.pyが増え、No.2の成果物（要件整理メモと基本設計書への追記）が残っていることを確認する' `
         -Expect '両方がbackendから見つかること' `
         -Show @"
   backendで : Get-ChildItem app\coupon.py
@@ -1297,12 +1343,16 @@ $script:VenvNote
                 'backend から ..\docs:'
                 Get-ChildItem '..\docs' -ErrorAction SilentlyContinue |
                     ForEach-Object { "  {0}  {1} bytes" -f $_.Name, $_.Length }
+                # 基本設計書.md は配布時からあるので、有無ではなく追記されているかを見る
+                $doc = '..\docs\基本設計書.md'
+                $added = (Test-Path $doc) -and ((Get-Content $doc -Raw -Encoding UTF8) -match '(?m)^#+ .*クーポン')
+                "基本設計書.md のクーポン機能の章: $(if ($added) { 'あり' } else { 'なし' })"
             }
         } `
         -Hint {
             param($text)
             $hasCoupon = $text -match 'coupon\.py'
-            $hasDocs = $text -match '要件整理メモ|クーポンAPI設計書'
+            $hasDocs = ($text -match '要件整理メモ') -and ($text -match 'クーポン機能の章: あり')
             if (-not $hasCoupon) {
                 Write-Mark 'NG' 'app\coupon.py が無い。couponへの切り替え（4-4-02）を確認する'
                 return 'NG'
@@ -1507,10 +1557,17 @@ $script:VenvNote
             Invoke-InRepo {
                 $enc = if ($script:ConsoleCodePage -eq 65001) { 'UTF-8' } else { "CP$($script:ConsoleCodePage)" }
                 $all = @(git status --porcelain 2>&1 | ForEach-Object { "$_" } | Where-Object { $_ })
-                $tracked = @($all | Where-Object { $_ -notmatch '^\?\?' })
+                # docs/ の追跡ファイル（基本設計書.md）は 4-4-01 でダミーを追記したもの。No.2 で受講者が
+                # 追記するのと同じ変更で、クローンごと消えるので、判定には含めずに分けて出す
+                $tracked = @($all | Where-Object { $_ -notmatch '^\?\?' -and $_ -notmatch 'docs/' })
+                $docsMod = @($all | Where-Object { $_ -notmatch '^\?\?' -and $_ -match 'docs/' })
                 $untracked = @($all | Where-Object { $_ -match '^\?\?' })
                 '--- 追跡ファイルの変更（backend/.env・backend/.gitignore など）---'
                 if ($tracked.Count -eq 0) { '（変更なし）' } else { $tracked }
+                if ($docsMod.Count -gt 0) {
+                    '--- 4-4-01 で追記したダミー（判定に含めない。クローン削除で消える）---'
+                    $docsMod
+                }
                 '--- 未追跡ファイル（演習の副産物。クローン削除で消える）---'
                 if ($untracked.Count -eq 0) { '（なし）' } else { $untracked }
                 '--- .env / .gitignore の差分 ---'
@@ -1893,7 +1950,7 @@ function Save-StepList {
 #
 # 受講者のPCで、受講者が自分の EShop を診断する。講師は画面共有で結果を見る。
 # リハーサルのステップ（New-Step）とは別の一覧で、事前確認書の章立てには対応しない。
-# deploy-rehearsal.py の整合検査は New-Step だけを見るので、こちらは New-Check で定義する。
+# check-publish.py の整合検査は New-Step だけを見るので、こちらは New-Check で定義する。
 #
 # 受講者が作業中の環境なので、読み取りだけにする。clone・pip・seed・DBの削除・ブランチの
 # 切り替え・サーバーの起動は行わない。直す操作は、表示した手順書の手順どおりに受講者が行う。
@@ -2202,12 +2259,26 @@ function Set-CheckList {
         if ($diff.Count -gt 0) { $diff | ForEach-Object { "  $_" } } else { '  （なし）' }
         $docs = @(Get-ChildItem (Join-Path $script:Dx.Repo 'docs') -Filter *.md -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
         "docs       => $(if ($docs.Count -gt 0) { $docs -join ', ' } else { '無い' })"
+        # 基本設計書.md は配布時から入っていて、No.2 で受講者が追記する。main と coupon で同じ内容なので、
+        # 配布された状態との差がそのまま受講者の追記になる
+        $api = Join-Path $script:Dx.Repo 'docs\基本設計書.md'
+        $apiState = if (-not (Test-Path $api)) { '無い' }
+                    else {
+                        $null = @(Invoke-DxGit diff --quiet $script:Dx.Base '--' docs/基本設計書.md)
+                        if ($LASTEXITCODE -eq 1) { '追記あり' } else { '配布時のまま' }
+                    }
+        "基本設計書.md => $apiState"
         "coupon.py  => $(if (Test-Path (Join-Path $script:Dx.Src 'app\coupon.py')) { 'あり' } else { 'なし' })"
         $oc = @(Invoke-DxGit rev-parse --verify --quiet origin/coupon)
         "origin/coupon => $(if ($LASTEXITCODE -eq 0 -and $oc.Count -gt 0) { '取得済み' } else { 'まだ無い（git fetch origin で取得する）' })"
     } -Hint {
         param($text)
         $br = $script:Dx.Branch
+        if ($text -match '基本設計書\.md => 無い') {
+            Write-Mark 'NG' 'docs\基本設計書.md が無い（配布時から入っていて、No.2 で追記するファイル）'
+            Write-Fix '名前を変えたなら元の名前に戻す。消した場合は、自分で戻さず講師に申し出る'
+            return 'NG'
+        }
         if ($text -match '途中の操作 => (?!なし)') {
             Write-Mark 'NG' 'git の操作（merge・rebase など）が途中で止まっている'
             Write-Fix '自分で直さず講師に申し出る（手元の変更を失わないようにするため）'
@@ -2239,9 +2310,14 @@ function Set-CheckList {
                     Write-Fix '講師に申し出る（03-01 手順0 の切り替えが途中で止まっている可能性がある）'
                     return 'NG'
                 }
-                if ($text -match 'docs       => 無い') {
-                    Write-Mark '注意' 'No.2 で作った設計書（docs の md）が EShop 直下に無い'
-                    Write-Fix '03-01 前提条件: No.2 の成果物を EShop\docs に置く'
+                if ($text -notmatch 'docs       => .*要件整理メモ\.md') {
+                    Write-Mark '注意' 'No.2 で作った要件整理メモ（docs\要件整理メモ.md）が無い'
+                    Write-Fix '03-01 前提条件: No.2 の要件整理メモを EShop\docs に置く'
+                    $r = '注意'
+                }
+                if ($text -match '基本設計書\.md => 配布時のまま') {
+                    Write-Mark '注意' 'docs\基本設計書.md にクーポン機能が追記されていない'
+                    Write-Fix '02-02 手順6: No.2 で決めたクーポン機能の設計を docs\基本設計書.md に追記する'
                     $r = '注意'
                 }
                 if ($tests.Count -gt 0) {
@@ -2953,14 +3029,13 @@ function Get-DefaultBase {
     # 置き場は「スクリプトを置いたフォルダの親」にする。手で作ったフォルダへ clone して
     # あれば作業物と記録もそこにまとまり、-WorkDir と -OutDir を渡さずに済む。
     # 前日に社内で clone しておく段取りでも、置き場が実行日で割れない。
-    # 次の3つを満たすときだけ。外すと置き場が意図しない場所に決まる。
+    # 次の2つを満たすときだけ。外すと置き場が意図しない場所に決まる。
     #   ・$here がスクリプトの置き場である（docs-template が並んでいる）。起動方法3で
     #     カレントが別の場所だったときに、その親を取り違えないため
-    #   ・正本を直接実行していない。正本の親は SW編 で、教材リポジトリに書き込んでしまう
     #   ・親がドライブ直下でなく、OneDrive配下でもない。前者は C:\ に記録を置いてしまう。
     #     後者は .venv と .git が同期対象になり、6章の実測が当てにならなくなる
     #     （デスクトップを既定にしていないのと同じ理由）
-    if ($script:ScriptVersion -notmatch '未配備' -and (Test-Path (Join-Path $here 'docs-template'))) {
+    if (Test-Path (Join-Path $here 'docs-template')) {
         $parent = Split-Path $here -Parent
         if ($parent -and (Split-Path $parent -Parent) -and $parent -notmatch '(?i)OneDrive' -and (Test-Path $parent)) {
             return $parent
@@ -3159,10 +3234,10 @@ foreach ($step in $steps) {
                 }
                 $tpl = Join-Path $script:MaterialRoot 'docs-template'
                 $n = @(Get-ChildItem (Join-Path $tpl '*.md') -ErrorAction SilentlyContinue).Count
-                # -MaterialDir の指定ミスと、配備物の欠落を切り分けられるようにする
+                # -MaterialDir の指定ミスと、clone したテンプレートの欠落を切り分けられるようにする
                 if ($n -gt 0) { Write-Host ("    {0,-8} {1} （{2}件）" -f 'テンプレ', $tpl, $n) -ForegroundColor Green }
                 elseif (-not (Test-Path $tpl)) { Write-Host ("    {0,-8} フォルダが無い: {1}（4-4-01で必要。-MaterialDir で指定する）" -f 'テンプレ', $tpl) -ForegroundColor Red }
-                else { Write-Host ("    {0,-8} *.mdが0件: {1}（4-4-01で必要。配備物を確認する）" -f 'テンプレ', $tpl) -ForegroundColor Red }
+                else { Write-Host ("    {0,-8} *.mdが0件: {1}（4-4-01で必要。rehearsalブランチのcloneを確認する）" -f 'テンプレ', $tpl) -ForegroundColor Red }
             }
             '6'   { Show-Timings }
             '7-3-b' {

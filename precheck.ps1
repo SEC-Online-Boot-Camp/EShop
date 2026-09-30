@@ -107,7 +107,7 @@ $ErrorActionPreference = 'Continue'
 
 # 正本は resource の 4-短期講座/AI活用入門講座/SW編/rehearsal にある。
 # 次の1行は deploy-rehearsal.py が配備時に書き換える（触らない）。
-$script:ScriptVersion = '53d31641（2026-09-30 配備）'
+$script:ScriptVersion = 'aabae1aa（2026-09-30 配備）'
 
 # PowerShellがネイティブコマンドの出力を解釈する文字コードに、Python側の出力を合わせる。
 # Pythonはパイプ出力のときロケールの文字コード（日本語WindowsならCP932）で書くため、
@@ -1238,7 +1238,7 @@ $script:VenvNote
 
     New-Step -Id '4-4-01' -Ch '4' -Title 'No.2成果物の配置（ダミーで代用）' -Kind change `
         -Purpose 'No.3の手順書はNo.2の成果物を参照する。無いと4-4の手順6以降と5章の#5が実行できない' `
-        -Expect 'docs/要件整理メモ.md と docs/クーポンAPI設計書.md が置かれる' `
+        -Expect 'docs/要件整理メモ.md と docs/API設計書.md が置かれる' `
         -Show @"
   New-Item -ItemType Directory -Force docs
   Copy-Item <rehearsalブランチ>\docs-template\*.md docs\
@@ -1302,7 +1302,7 @@ $script:VenvNote
         -Hint {
             param($text)
             $hasCoupon = $text -match 'coupon\.py'
-            $hasDocs = $text -match '要件整理メモ|クーポンAPI設計書'
+            $hasDocs = $text -match '要件整理メモ|API設計書'
             if (-not $hasCoupon) {
                 Write-Mark 'NG' 'app\coupon.py が無い。couponへの切り替え（4-4-02）を確認する'
                 return 'NG'

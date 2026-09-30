@@ -128,7 +128,8 @@ function Get-ScriptVersion {
             if ($st) { $log += ' ※未コミットの変更あり' }
             return $log
         }
-        # 起動方法3でカレントが置き場でないときは、ここでファイルが見つからずに不明になる
+        # 起動方法3でカレントが置き場でないときは、ここでファイルが見つからない。診断（-Diagnose）
+        # では、受講者の EShop の origin/rehearsal から版を補う（Invoke-Diagnose）
         $file = Join-Path $dir $name
         if (Test-Path -LiteralPath $file -PathType Leaf) {
             $blob = "$(& git -C $dir hash-object -- $file 2>$null)".Trim()
@@ -2917,6 +2918,18 @@ function Invoke-Diagnose {
     $script:Dx.Stage = switch ($br) { 'main' { 'No.1・No.2' } 'coupon' { 'No.3以降' } default { '判定できない' } }
     $null = @(Invoke-DxGit rev-parse --verify --quiet "origin/$br")
     $script:Dx.Base = if ($br -and $LASTEXITCODE -eq 0) { "origin/$br" } else { 'HEAD' }
+
+    # 起動方法3では置き場が分からず、版が不明になる。受講者は直前に origin/rehearsal を fetch して
+    # いるので、そこでこのファイルを最後に変えたコミットを版として補う。実際に走らせた中身と同じとは
+    # 限らないので、推定であることを書き添える。読めなければ不明のままにし、診断は続ける
+    if ($script:ScriptVersion -like '不明（gitから*') {
+        try {
+            $log = "$(@(Invoke-DxGit log -1 --format='%h %cs' origin/rehearsal '--' precheck.ps1)[0])".Trim()
+            if ($LASTEXITCODE -eq 0 -and $log -match '^[0-9a-f]{7,} \d{4}-\d{2}-\d{2}$') {
+                $script:ScriptVersion = "$log（推定。置き場から読めないため、EShop の origin/rehearsal から補った）"
+            }
+        } catch { }
+    }
 
     $out = if ($OutDir) { $OutDir } else { Split-Path $repo -Parent }
     $script:DxRecord = Join-Path $out "eshop-diagnose-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"

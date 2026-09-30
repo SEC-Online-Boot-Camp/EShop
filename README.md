@@ -122,7 +122,7 @@ Expand-Archive "$env:TEMP\eshop-diagnose.zip" "$env:TEMP\eshop-diagnose" -Force
 
 - ステップ番号は同書の節番号と揃えてある（`3-2-1`・`4-3-05`・`7-2-b`など）
 - 期待値の出どころ: 同書 4-3（`main` 54件）・4-4（`coupon` 55件）・5章
-- 記録の「スクリプトの版」は実行時にgitから読む。cloneから実行したときは`precheck.ps1`を最後に変えたコミット（短縮ハッシュと日付）、`git archive`で取り出したとき（講座当日の診断）は`blob <短縮ID>`になる。後者は、このブランチのcloneで`git log --all --find-object=<短縮ID>`を実行するとどのコミットの版かが分かる
+- 記録の「スクリプトの版」は実行時にgitから読む。cloneから実行したときは`precheck.ps1`を最後に変えたコミット（短縮ハッシュと日付）、`git archive`で取り出したとき（講座当日の診断）は`blob <短縮ID>`になる。後者は、このブランチのcloneで`git log --all --find-object=<短縮ID>`を実行するとどのコミットの版かが分かる。診断を起動方法3（スクリプトブロック）で実行したときは置き場が分からないため、受講者のEShopの`origin/rehearsal`で`precheck.ps1`を最後に変えたコミットを`<短縮ハッシュ> <日付>（推定。…）`の形で補う。fetch後に取り出し直していなければ、実際に走らせた版と違うことがある
 
 **pushする前に`check-publish.py`を通す。** このブランチは公開リポジトリにあり、受講者も中身を読めるため。
 

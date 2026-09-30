@@ -62,7 +62,8 @@
                          5章の挙動確認（5-2〜5-9）を除いた2〜7章を実施する。5章は
                          -Chapter 5 で明示したときだけ対象になる
         -WorkDir <path>  EShopをcloneする作業フォルダ（既定 C:\rehearsal-<日付>）
-        -MaterialDir <p> docs-template があるフォルダ（4-4-01で使う。既定はこのスクリプトの場所）
+        -MaterialDir <p> 講師が別途渡す docs-template フォルダを置いた場所。docs-template そのもの
+                         ではなく、その親フォルダを指す（4-4-01で使う。既定はこのスクリプトの場所）
         -OutDir <path>   記録の出力先（既定は作業フォルダと同じ）
         -NoTranscript    Start-Transcriptを使わない
 
@@ -1247,10 +1248,12 @@ $script:VenvNote
         -Purpose 'No.3の手順書はNo.2の成果物を参照する。無いと4-4の手順6以降と5章の#5が実行できない' `
         -Expect 'docs/要件整理メモ.md が置かれ、docs/基本設計書.md の末尾にクーポン機能の章が追記される' `
         -Show @"
-  Copy-Item <rehearsalブランチ>\docs-template\要件整理メモ.md docs\
-  docs\基本設計書.md の末尾に <rehearsalブランチ>\docs-template\基本設計書.md を追記する
+  Copy-Item <MaterialDir>\docs-template\要件整理メモ.md docs\
+  docs\基本設計書.md の末尾に <MaterialDir>\docs-template\基本設計書.md を追記する
 
-  リハーサルではNo.2の演習を行わないため、rehearsalブランチのダミー成果物で代用する。
+  <MaterialDir> は、講師が別途渡す docs-template を置いたフォルダ（-MaterialDir で指定する。
+  既定はこのスクリプトの場所）。docs-template はこのブランチには入っていない。
+  リハーサルではNo.2の演習を行わないため、講師が渡すダミー成果物で代用する。
   docs/基本設計書.md は配布時から入っている既存機能の設計書で、受講者はこれに追記する。
   上書きせず追記するのはそのためで、すでに追記済みなら二重には足さない。
   中身の妥当性は問わず、手順が実行できるかの確認が目的。
@@ -1261,7 +1264,7 @@ $script:VenvNote
                 $tpl = Join-Path $script:MaterialRoot 'docs-template'
                 $memo = Join-Path $tpl '要件整理メモ.md'
                 $add = Join-Path $tpl '基本設計書.md'
-                if (-not (Test-Path $memo) -or -not (Test-Path $add)) { "docs-template が見つからない: $tpl（-MaterialDir で指定する）"; return }
+                if (-not (Test-Path $memo) -or -not (Test-Path $add)) { "docs-template が見つからない: $tpl（講師が渡す docs-template を置いたフォルダを -MaterialDir で指定する）"; return }
                 $doc = Join-Path (Get-Location).Path 'docs\基本設計書.md'
                 if (-not (Test-Path $doc)) { "配布時の設計書が無い: $doc（EShop が古いか、ブランチが違う）"; return }
                 New-Item -ItemType Directory -Force docs | Out-Null
@@ -1979,12 +1982,13 @@ function Get-DefaultBase {
     # あれば作業物と記録もそこにまとまり、-WorkDir と -OutDir を渡さずに済む。
     # 前日に社内で clone しておく段取りでも、置き場が実行日で割れない。
     # 次の2つを満たすときだけ。外すと置き場が意図しない場所に決まる。
-    #   ・$here がスクリプトの置き場である（docs-template が並んでいる）。起動方法3で
-    #     カレントが別の場所だったときに、その親を取り違えないため
+    #   ・$here がスクリプトの置き場である（precheck.ps1 がある）。起動方法3で
+    #     カレントが別の場所だったときに、その親を取り違えないため。docs-template は
+    #     講師が別途渡すもので、置き場に並んでいるとは限らないので判定に使わない
     #   ・親がドライブ直下でなく、OneDrive配下でもない。前者は C:\ に記録を置いてしまう。
     #     後者は .venv と .git が同期対象になり、6章の実測が当てにならなくなる
     #     （デスクトップを既定にしていないのと同じ理由）
-    if (Test-Path (Join-Path $here 'docs-template')) {
+    if (Test-Path (Join-Path $here 'precheck.ps1')) {
         $parent = Split-Path $here -Parent
         if ($parent -and (Split-Path $parent -Parent) -and $parent -notmatch '(?i)OneDrive' -and (Test-Path $parent)) {
             return $parent
@@ -2012,7 +2016,9 @@ $script:WorkRoot = if ($WorkDir) { $WorkDir } else { $script:DefaultBase }
 $script:RepoDir = Join-Path $script:WorkRoot 'EShop'
 $script:SrcDir = Join-Path $script:RepoDir 'backend'
 $script:OutRoot = if ($OutDir) { $OutDir } else { $script:DefaultBase }
-$script:MaterialRoot = if ($MaterialDir) { $MaterialDir } elseif ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+# スクリプトの置き場（rehearsalブランチのクローン）。7-3-b で消すものの案内に使う
+$script:ScriptHome = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+$script:MaterialRoot = if ($MaterialDir) { $MaterialDir } else { $script:ScriptHome }
 # 7-2-b で「開始時点に戻す」ために、いまのUser環境変数を控える。
 # 元から設定されている値を消してしまわないようにするため。実行する機材に
 # proxy や PIP_CERT が元から入っていることがあり、無条件に削除すると事故になる。
@@ -2054,7 +2060,7 @@ Write-Host @"
   スクリプトの版: $script:ScriptVersion
   対象章       : $($script:TargetChapters -join ', ')  （全 ${total}ステップ）
   作業フォルダ : $script:WorkRoot
-  テンプレート : $script:MaterialRoot\docs-template
+  ダミー成果物 : $script:MaterialRoot\docs-template（講師が別途渡す。-MaterialDir で指定）
   記録の出力先 : $script:OutRoot
 "@ -ForegroundColor Gray
 
@@ -2170,7 +2176,7 @@ foreach ($step in $steps) {
             '4-0' {
                 Write-Host ''
                 Write-Label '作業' $script:WorkRoot 'White'
-                Write-Label 'テンプレ' (Join-Path $script:MaterialRoot 'docs-template') 'White'
+                Write-Label 'ダミー' (Join-Path $script:MaterialRoot 'docs-template') 'White'
                 Write-Label '記録' $script:OutRoot 'White'
                 Write-Host '  ここから先はファイルを作る。場所を変えるなら中断して -WorkDir を指定し直す' -ForegroundColor DarkGray
                 Write-Host '  （2章の時点で記録の書き出しは始まっているので、-OutDir はここでは変えられない）' -ForegroundColor DarkGray
@@ -2183,10 +2189,10 @@ foreach ($step in $steps) {
                 }
                 $tpl = Join-Path $script:MaterialRoot 'docs-template'
                 $n = @(Get-ChildItem (Join-Path $tpl '*.md') -ErrorAction SilentlyContinue).Count
-                # -MaterialDir の指定ミスと、clone したテンプレートの欠落を切り分けられるようにする
-                if ($n -gt 0) { Write-Host ("    {0,-8} {1} （{2}件）" -f 'テンプレ', $tpl, $n) -ForegroundColor Green }
-                elseif (-not (Test-Path $tpl)) { Write-Host ("    {0,-8} フォルダが無い: {1}（4-4-01で必要。-MaterialDir で指定する）" -f 'テンプレ', $tpl) -ForegroundColor Red }
-                else { Write-Host ("    {0,-8} *.mdが0件: {1}（4-4-01で必要。rehearsalブランチのcloneを確認する）" -f 'テンプレ', $tpl) -ForegroundColor Red }
+                # -MaterialDir の指定ミスと、講師が渡したダミー成果物の欠落を切り分けられるようにする
+                if ($n -gt 0) { Write-Host ("    {0,-8} {1} （{2}件）" -f 'ダミー', $tpl, $n) -ForegroundColor Green }
+                elseif (-not (Test-Path $tpl)) { Write-Host ("    {0,-8} フォルダが無い: {1}（4-4-01で必要。講師が渡す docs-template を置いたフォルダを -MaterialDir で指定する）" -f 'ダミー', $tpl) -ForegroundColor Red }
+                else { Write-Host ("    {0,-8} *.mdが0件: {1}（4-4-01で必要。講師が渡した docs-template の中身を確認するか、-MaterialDir を指定し直す）" -f 'ダミー', $tpl) -ForegroundColor Red }
             }
             '6'   { Show-Timings }
             '7-3-b' {
@@ -2207,19 +2213,29 @@ foreach ($step in $steps) {
                     Write-Host ("    {0}  （作業物。フォルダごと）" -f $script:WorkRoot) -ForegroundColor White
                     Write-Host ("    {0}  （記録。rehearsal-check.txt と precheck-*.md）" -f $script:OutRoot) -ForegroundColor White
                 }
-                # クローンが置き場の中にあるなら、上の行で一緒に消える。別に出すと
-                # 「2箇所消す」と読まれてしまう。
-                $matInside = $false
-                foreach ($r in $script:WorkRoot, $script:OutRoot) {
-                    if (-not $r) { continue }
-                    $a = $script:MaterialRoot.TrimEnd('\')
-                    $b = $r.TrimEnd('\')
-                    if ($a -eq $b -or $a.ToLower().StartsWith($b.ToLower() + '\')) { $matInside = $true }
+                # クローンと講師が渡した docs-template が置き場の中にあるなら、上の行で一緒に
+                # 消える。別に出すと「2箇所消す」と読まれてしまう。docs-template がクローンの
+                # 中にあるときは、クローンを消せば一緒に消えるので、クローンだけを出す。
+                $isInside = {
+                    param([string]$path, [string[]]$roots)
+                    $a = $path.TrimEnd('\')
+                    foreach ($r in $roots) {
+                        if (-not $r) { continue }
+                        $b = $r.TrimEnd('\')
+                        if ($a -eq $b -or $a.ToLower().StartsWith($b.ToLower() + '\')) { return $true }
+                    }
+                    return $false
                 }
-                if (-not $matInside) {
-                    Write-Host ("    {0}  （rehearsalブランチのクローンごと）" -f $script:MaterialRoot) -ForegroundColor White
+                $roots = @($script:WorkRoot, $script:OutRoot)
+                if (-not (& $isInside $script:ScriptHome $roots)) {
+                    Write-Host ("    {0}  （rehearsalブランチのクローンごと）" -f $script:ScriptHome) -ForegroundColor White
+                    $roots += $script:ScriptHome
                 }
-                Write-Host '  この削除は自動では行わない（講師自身のPCで実行した場合に教材のクローンを消してしまうため）' -ForegroundColor DarkGray
+                $tplDir = Join-Path $script:MaterialRoot 'docs-template'
+                if (-not (& $isInside $tplDir $roots)) {
+                    Write-Host ("    {0}  （講師が渡したダミー成果物。フォルダごと）" -f $tplDir) -ForegroundColor White
+                }
+                Write-Host '  この削除は自動では行わない（講師自身のPCで実行した場合に教材を消してしまうため）' -ForegroundColor DarkGray
                 Write-Host ''
                 Write-Host '  rehearsal-check.txt は客先のネットワーク情報を含んだままなので、渡したあとの' -ForegroundColor Yellow
                 Write-Host '  取り扱いに注意する。社外・他案件へ出さない' -ForegroundColor Yellow

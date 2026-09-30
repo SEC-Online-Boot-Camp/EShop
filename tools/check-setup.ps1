@@ -712,11 +712,13 @@ main(sys.argv[1])
     New-Check -Id 'D5-1' -Group 'サーバー' -Title '8000番とSwagger UI' -Ref '01-01 手順4' -Cmd {
         # サーバーは起動しない。起動中なら応答を見る（プロキシを通さずに 127.0.0.1 へ直接）
         $pids = @()
-        $conns = @(Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue)
+        # 実行ポリシーが Restricted の PowerShell 7 では、NetTCPIP モジュールを読み込めずに例外になる。
+        # -ErrorAction では抑えられず、この項目がここで止まるので try で受ける
+        try { $conns = @(Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction Stop) } catch { $conns = @() }
         if ($conns.Count -gt 0) {
             $pids = @($conns | ForEach-Object { $_.OwningProcess } | Sort-Object -Unique)
         } else {
-            # Get-NetTCPConnection が無い機材に備えて、待ち受けられるかで確かめる
+            # Get-NetTCPConnection が使えない・モジュールを読み込めない機材に備えて、待ち受けられるかで確かめる
             $busy = $false
             try { $l = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 8000); $l.Start(); $l.Stop() } catch { $busy = $true }
             if (-not $busy) { '8000番 => 使われていない（サーバーは起動していない）'; return }

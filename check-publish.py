@@ -17,7 +17,7 @@
         任意のファイルも、配布ブランチのファイルと同じ基準で検査する。main・coupon へ
         tools/check-setup.ps1 を入れる PR をマージする前に、作業ツリーのファイルを確かめるため
 
-検査対象は precheck.ps1・README.md・docs-template/*.md と、このファイル自身。
+検査対象は precheck.ps1・README.md と、このファイル自身。
 このファイルの FORBIDDEN・ALLOW_LINE・FORBIDDEN_DIST の定義行は、検査する語をそのまま
 含むので外す。
 
@@ -42,7 +42,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SELF = Path(__file__).resolve().name
 
-# 必ずあるはずのもの。docs-template/*.md はこれに加えて全部を見る
+# 必ずあるはずのもの
 REQUIRED = ["precheck.ps1", "README.md"]
 
 # 公開してはいけないもの。このブランチは公開リポジトリなので、push 前に弾く。
@@ -58,7 +58,6 @@ FORBIDDEN = [
 # 検査から外す行（説明のために語を含むもの）
 ALLOW_LINE = [
     "proxy.example.local",  # プレースホルダ
-    "settings.local.json",  # Claude Code の設定ファイル名（tools/check-setup.ps1 で読む）。ホスト名ではない
     "伏せるため",
     "伏せる情報",
     "件数は事前確認書",
@@ -87,8 +86,7 @@ def targets() -> list[str] | None:
     if missing:
         print("NG: 検査対象が見つからない: " + " / ".join(missing), file=sys.stderr)
         return None
-    docs = sorted(p.relative_to(HERE).as_posix() for p in (HERE / "docs-template").glob("*.md"))
-    return REQUIRED + docs + [SELF]
+    return REQUIRED + [SELF]
 
 
 def definition_lines(text: str) -> set[int]:

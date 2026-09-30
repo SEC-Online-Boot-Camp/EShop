@@ -4,22 +4,20 @@ AI活用入門講座 SW編の**事前リハーサル**で使うものを置い�
 
 `main`・`coupon`とは履歴を共有しない独立したブランチで、**アプリのコードは入っていない**。受講者が`git clone`したときに、このブランチの内容が作業ツリーへ展開されないようにするためである。
 
-> **このブランチは公開リポジトリにあり、受講者からも参照できる。** 普通の`git clone`はすべてのブランチをリモート追跡ブランチとして取得するため、`git show origin/rehearsal:precheck.ps1`で中身を読める。**受講者に伏せたい情報（演習の答え・仕込んだ欠陥の件数など）はここに書かない。** 期待するテスト件数（54件・55件）は配布する手順書（03-01〜03-03）に既に書かれているので差し支えない。
+> **このブランチは公開リポジトリにあり、受講者からも参照できる。** 普通の`git clone`はすべてのブランチをリモート追跡ブランチとして取得するため、`git show origin/rehearsal:precheck.ps1`で中身を読める。**受講者に伏せたい情報（演習の答え・仕込んだ欠陥の件数など）はここに書かない。** 期待するテスト件数（54件・55件）は、どちらも配布ブランチ（`main`・`coupon`）の`tools/check-setup.ps1`に書かれており、55件は受講者向けの手順書 03-01 にも書かれているので差し支えない。
 
 ## 中身
 
 | ファイル                              | 用途                                                                       |
 | :------------------------------------ | :------------------------------------------------------------------------- |
 | `precheck.ps1`                        | 事前確認書 第I部（実機確認）を1ステップずつ進める対話型ランナー |
-| `docs-template/要件整理メモ.md`       | リハーサル用のダミー成果物。本来はNo.2で受講者が作るもの                   |
-| `docs-template/基本設計書.md`         | 同上。配布時の`docs/基本設計書.md`の末尾に足す、クーポン機能の追記分     |
 | `check-publish.py`                    | push前の検査。公開してはいけない情報が混ざっていないかと、事前確認書との対応を見る |
 
-`docs-template`の2ファイルは、`precheck.ps1`の4-4-01でリハーサル機の`EShop/docs/`へ置かれる。要件整理メモはコピーし、基本設計書は配布時から入っている既存機能の設計書の末尾に追記する（受講者もNo.2でこの設計書に追記するため）。No.3の手順書（03-01〜03-03）がNo.2の成果物を参照する前提で書かれているため、リハーサルではこれで代用する。**解答例は講師専用資料なので、このPublicリポジトリには置かない。**
+**リハーサル用のダミー成果物（要件整理メモ・基本設計書の追記分）はこのブランチに置かず、講師が別途渡す。** 渡された`docs-template`フォルダを置いたフォルダ（`docs-template`の親）を、4-4-01で使うために`-MaterialDir`に指定する。4-4-01では要件整理メモをリハーサル機の`EShop/docs/`へコピーし、基本設計書は配布時から入っている既存機能の設計書の末尾に追記する（受講者もNo.2でこの設計書に追記するため）。No.3の手順書（03-01〜03-03）がNo.2の成果物を参照する前提で書かれているため、リハーサルではこれで代用する。**解答例は講師専用資料なので、この経路では使わない。**
 
 ## 使い方
 
-リハーサル機で次を実行する。受講者が使う`main`・`coupon`は取得されない。
+リハーサル機で次を実行する。受講者が使う`main`・`coupon`は取得されない。講師が別途渡す`docs-template`フォルダは`$base`の直下に置いておく。
 
 ```powershell
 $base = "C:\rehearsal-$(Get-Date -Format 'yyyyMMdd')"
@@ -27,9 +25,11 @@ New-Item -ItemType Directory -Force $base | Out-Null
 Set-Location $base
 git clone -b rehearsal --single-branch https://github.com/SEC-Online-Boot-Camp/EShop.git EShop-rehearsal
 Set-Location EShop-rehearsal
-.\precheck.ps1 -DryRun            # 下見（何も実行しない）
-.\precheck.ps1                    # 実環境リハーサル
+.\precheck.ps1 -MaterialDir $base -DryRun   # 下見（何も実行しない）
+.\precheck.ps1 -MaterialDir $base           # 実環境リハーサル
 ```
+
+`-MaterialDir`には`docs-template`そのものではなく、その親フォルダを渡す。下の表の呼び方でも同じように付ける。
 
 止まるのは人が操作・判断するところだけで、機械が判定できるステップは確認を求めずに流す。**自動で流したステップの判定がNGになったときは、その場で止まる。**
 
@@ -52,6 +52,7 @@ Set-Location EShop-rehearsal
 ```text
 C:\work\                  ← 置き場（手で作る。名前は何でもよい）
 ├── EShop-rehearsal\      ← このリポジトリのクローン
+├── docs-template\        ← 講師が別途渡すダミー成果物（-MaterialDir C:\work で指定する）
 ├── EShop\                ← 4-3-05 でcloneする作業ツリー
 ├── precheck-result-<日時>.md
 ├── precheck-steps-<日時>.md
@@ -108,7 +109,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\check-setup.ps1
 python check-publish.py --doc <事前確認書.md のパス>
 ```
 
-- 公開の検査: `precheck.ps1`・`README.md`・`docs-template`の`.md`・`check-publish.py`自身に、仕込んだ欠陥の件数・IPアドレス・PACのURL・社内のホスト名とドメイン・利用者名を含むローカルパスが無いかを見る
+- 公開の検査: `precheck.ps1`・`README.md`・`check-publish.py`自身に、仕込んだ欠陥の件数・IPアドレス・PACのURL・社内のホスト名とドメイン・利用者名を含むローカルパスが無いかを見る
 - 整合の検査: `New-Step`のステップIDが、事前確認書の章・節と対応しているかを見る。事前確認書は教材リポジトリにあるので、`--doc`でパスを渡したときだけ行う
 - 配布ブランチの検査: `origin/main`・`origin/coupon`の`tools/check-setup.ps1`を`git show`で読み、公開の検査に加えて、hookの作り方（演習の答え）になる語も見る。受講者の作業ツリーに入り、Claude Codeも読むため。両方にあれば同じ内容か（blobが一致するか）も見る。refかファイルが無ければ「省略:」と出して先へ進む。fetchはしないので、手元のリモート追跡ブランチの状態を見る
 - `--file <path>`（複数回指定可）: 任意のファイルを、配布ブランチのファイルと同じ基準で検査する。`tools/check-setup.ps1`を`main`・`coupon`へ入れるPRをマージする前に、作業ツリーのファイルを確かめるのに使う

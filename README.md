@@ -29,6 +29,8 @@ No.3では実装作業は行いません。この実装に対して**試験観�
 | :--- | :--- |
 | `backend/` | FastAPI のバックエンド（API・テスト） |
 | `frontend/` | React + TypeScript + Vite の画面（クーポンの適用・解除を含む）。詳細は [frontend/README.md](frontend/README.md) |
+| `docs/` | 既存機能の基本設計書（[docs/基本設計書.md](docs/基本設計書.md)） |
+| `tools/` | 講座当日の診断スクリプト（`check-setup.ps1`） |
 | `.vscode/` | VS Code のテストパネルで、backend の pytest を `backend/` から動かす設定 |
 
 CI と Claude による PR レビュー（`.github/`）は講座では使わないため、`github-config` ブランチに残しています。

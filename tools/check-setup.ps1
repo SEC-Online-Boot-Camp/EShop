@@ -477,7 +477,7 @@ function Set-CheckList {
                     $r = '注意'
                 }
                 if ($app.Count -gt 0) {
-                    Write-Mark '参考' 'backend/app を変えている（03-03 のデバッグや No.4 の実装で直した分なら問題ない）'
+                    Write-Mark '参考' 'backend/app を変えている（03-03 のデバッグで直した分なら問題ない）'
                 }
             }
             default {
@@ -823,7 +823,7 @@ main(sys.argv[1])
             if ($failed + $errors -gt 0) {
                 Write-Mark 'NG' "配布されたテストが失敗している（PASS ${passed}件・失敗 ${failed}件・エラー ${errors}件）"
                 if ($script:Dx.Branch -eq 'coupon') {
-                    Write-Fix '03-03 や No.4 でコードを直したあとなら、その修正が既存の機能を壊している（回帰）。D2-2 の一覧のファイルを git diff で見直す'
+                    Write-Fix '03-03 でコードを直したあとなら、その修正が既存の機能を壊している（回帰）。D2-2 の一覧のファイルを git diff で見直す'
                     Write-Fix '直す前から失敗するなら、03-01 手順0（切り替え）と手順0-2（DBの作り直し）を確かめる'
                 } else {
                     Write-Fix 'D2-3（.env）と D3-3（依存パッケージ）を先に見る。どちらも OK なら講師に申し出る'

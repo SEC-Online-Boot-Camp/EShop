@@ -1,28 +1,31 @@
 # テスト方針・妥当性の記録
 
-このリポジトリの既存機能（会員認証・商品一覧・カート・注文確定）は `tests/` 配下の結合テストで検証している。
+このリポジトリの既存機能（会員認証・商品一覧・カート・注文確定）は `tests/` 配下のテストで検証している。
 テストの技術的な位置づけ（TestClientの仕組み等）は [README.md](README.md) を参照。
+
+`tests/` には、2つのレベルのテストがある。`backend/` で `pytest` を実行すると両方が流れる（合計54件）。
+
+| レベル | 置き場所 | 役割 | 件数 |
+| :--- | :--- | :--- | :--- |
+| 結合テスト | `tests/integration/` | API を外から呼び、基本設計書（`docs/基本設計書.md`）のとおりに動くかを確かめる試験 | 18件 |
+| 単体テスト | `tests/unit/` | 開発者が書いた、関数・モデル単位の試験（認証の部品・DB 接続・モデル・スキーマ・初期データ） | 36件 |
+
+結合テストだけを流すときは `pytest tests/integration`、単体テストだけなら `pytest tests/unit` とする。フィクスチャ（`tests/conftest.py`）は両方で共通に使う。
 
 このドキュメントの目的は、**既存テストがどこまで保証していて、どこからが未検証か**を明確にすることである。
 クーポン機能を追加する際、この境界線の外側（未検証の部分）を壊しても既存テストは気づけない。
 
 ## 試験観点マッピング
 
-| エンドポイント   | 正常系                                                                | 異常系                                                                               | 境界値                                        |
-| :--------------- | :-------------------------------------------------------------------- | :----------------------------------------------------------------------------------- | :-------------------------------------------- |
-| POST /auth/login | `test_login_success`                                                  | `test_login_wrong_password`, `test_login_unknown_email`                              | -                                             |
-| GET /products    | `test_list_products_returns_registered_product`                       | -                                                                                    | -                                             |
-| POST /cart/items | `test_add_item_success`, `test_add_existing_item_increments_quantity` | `test_add_item_unknown_product`（`detail`文言も検証）, `test_add_item_without_login` | `test_add_item_negative_quantity_is_rejected` |
-| GET /cart        | `test_get_empty_cart`                                                 | `test_get_cart_without_login`                                                        | -                                             |
-| POST /orders     | `test_checkout_success`, `test_cart_is_cleared_after_checkout`        | `test_checkout_without_login`, `test_checkout_with_empty_cart`（`detail`文言も検証） | -                                             |
+結合テストの試験観点（エンドポイントごとの正常系・異常系・境界値と、それを確かめるテスト）は、[docs/試験観点シート.md](../docs/試験観点シート.md) にまとめている。
 
 ## 意図的にスコープ外としている項目
 
 - **同時実行時の挙動**：テストはSQLiteのin-memory DBを使っており、リクエストは直列に処理される。実際の同時アクセスによる競合は再現できない
 - **負荷・性能**：範囲外
 
-※ 以前は`seed.py`をスコープ外としていたが、現在は`tests/test_seed.py`で初回投入と再実行時スキップ（冪等性）を検証している。
-※ 以前は他ユーザーのカート／注文分離もスコープ外としていたが、現在は`tests/test_cart.py`の`TestCartUserIsolation`と`tests/test_orders.py`の`TestOrderUserIsolation`で、他ユーザーのカート内容が見えないこと・チェックアウト時に他ユーザーのカート項目を巻き込まないことを検証している。
+※ 以前は`seed.py`をスコープ外としていたが、現在は`tests/unit/test_seed.py`で初回投入と再実行時スキップ（冪等性）を検証している。
+※ 以前は他ユーザーのカート／注文分離もスコープ外としていたが、現在は`tests/integration/test_cart.py`の`TestCartUserIsolation`と`tests/integration/test_orders.py`の`TestOrderUserIsolation`で、他ユーザーのカート内容が見えないこと・チェックアウト時に他ユーザーのカート項目を巻き込まないことを検証している。
 
 ## カバレッジの数字だけでは分からないこと：ミューテーションテストの結果
 
@@ -71,7 +74,7 @@ mutmut show <変異ID>       # 個別の変異内容（diff）を確認
 | 生存（変異を入れてもテストが通った） | 94                   |
 | ミューテーションスコア               | **60.3%**（143/237） |
 
-`tests/test_models.py`（モデル定義・制約・関連）、`tests/test_database.py`（`DATABASE_URL`分岐と`get_db`クローズ保証）、`tests/test_seed.py`（初回投入と冪等性）を追加した結果、前回（42.6%）から**+17.7pt**改善した。
+`tests/unit/test_models.py`（モデル定義・制約・関連）、`tests/unit/test_database.py`（`DATABASE_URL`分岐と`get_db`クローズ保証）、`tests/unit/test_seed.py`（初回投入と冪等性）を追加した結果、前回（42.6%）から**+17.7pt**改善した。
 
 ### 結果（2026-08-25実測、mutmut 2.5.1、schemas/auth/main 追加後）
 
@@ -82,7 +85,7 @@ mutmut show <変異ID>       # 個別の変異内容（diff）を確認
 | 生存（変異を入れてもテストが通った） | 84                   |
 | ミューテーションスコア               | **64.6%**（153/237） |
 
-`tests/test_schemas.py`、`tests/test_auth_core.py`、`tests/test_main.py`を追加した結果、直前（60.3%）から**+4.3pt**改善した（累計では42.6%比で**+22.0pt**）。
+`tests/unit/test_schemas.py`、`tests/unit/test_auth_core.py`、`tests/integration/test_main.py`を追加した結果、直前（60.3%）から**+4.3pt**改善した（累計では42.6%比で**+22.0pt**）。
 
 ### 結果（2026-08-25実測、mutmut 2.5.1、seed データ内容検証テスト追加後）
 
@@ -93,7 +96,7 @@ mutmut show <変異ID>       # 個別の変異内容（diff）を確認
 | 生存（変異を入れてもテストが通った） | 64                   |
 | ミューテーションスコア               | **73.0%**（173/237） |
 
-`tests/test_seed.py`に投入データの具体的な内容（商品の名前・価格・カテゴリー・セール状態、ユーザーのメール・ランク）を検証するテストを追加した結果、前回（64.6%）から**+8.4pt**改善した。seed.py の26件の生存変異のうち、大半がリテラル値の変異であり、投入データの内容検証により対処可能であることが判明した。
+`tests/unit/test_seed.py`に投入データの具体的な内容（商品の名前・価格・カテゴリー・セール状態、ユーザーのメール・ランク）を検証するテストを追加した結果、前回（64.6%）から**+8.4pt**改善した。seed.py の26件の生存変異のうち、大半がリテラル値の変異であり、投入データの内容検証により対処可能であることが判明した。
 
 > **注意（mutmutの既知の制限）**：mutmutは終了コードが`1`（テスト失敗）かどうかだけで生存判定をしており（`returncode != 1`）、インポート時エラー等で終了コード`2`になるケースを誤って「生存」扱いする。実際に`app/routers/{cart,orders,products}.py`の生存変異を`mutmut apply <id>`で1件ずつ手動検証したところ、`APIRouter(prefix=...)`を壊す変異や`router = None`にする変異はテストの有無に関わらずFastAPI自身の起動時バリデーション（`AssertionError: A path prefix must start with '/'`等）やインポートエラーで即座にクラッシュしており、本来「検知」に分類されるべきだった。つまり**生存139件のうち一定数はmutmutの誤判定によるもので、実際のテスト網羅性はこの数字が示すより高い**。個別の生存変異に対応する際は、必ず`mutmut apply <id>`→`pytest`で実際にクラッシュするか手動確認すること。
 
@@ -122,7 +125,7 @@ mutmut show <変異ID>       # 個別の変異内容（diff）を確認
 
 `cart.py`（商品未発見時）と`orders.py`（カート空時）で、`status_code`のみ確認し`detail`文言は未検証だった。→ 該当テストに`detail`のアサーションを追加して解決。
 
-`app/routers/auth.py`の`test_login_wrong_password`にも同種のギャップがあったが、`tests/test_auth.py`に`detail`文言のアサーションを追加して対応済み。
+`app/routers/auth.py`の`test_login_wrong_password`にも同種のギャップがあったが、`tests/integration/test_auth.py`に`detail`文言のアサーションを追加して対応済み。
 
 ### `database.py` が 100% 生存して見える根本要因
 
@@ -155,7 +158,7 @@ mutmut show <変異ID>       # 個別の変異内容（diff）を確認
 | 生存（変異を入れてもテストが通った） | 51                   |
 | ミューテーションスコア               | **78.5%**（186/237） |
 
-`tests/conftest.py`（`other_user`/`other_auth_headers`フィクスチャ追加）、`tests/test_cart.py`・`tests/test_orders.py`へのクロスユーザー分離テスト追加、`tests/test_auth_env.py`新規作成（`SECRET_KEY`/`ALGORITHM`/`EXPIRE_MINUTES`の環境変数フォールバック分岐を直接テスト）、`tests/test_schemas.py`への`LoginRequest`/`CartItemOut`/`OrderItemOut`/`OrderOut`テスト追加、`tests/test_models.py`への実DB挙動テスト（unique制約・relationship永続化）追加、`tests/test_database.py`のreload副作用修正（moduleスコープのautouseフィクスチャで復元）を行った結果、前回（73.0%）から**+5.5pt**改善した（累計では初回41.8%比で**+36.7pt**）。
+`tests/conftest.py`（`other_user`/`other_auth_headers`フィクスチャ追加）、`tests/integration/test_cart.py`・`tests/integration/test_orders.py`へのクロスユーザー分離テスト追加、`tests/unit/test_auth_env.py`新規作成（`SECRET_KEY`/`ALGORITHM`/`EXPIRE_MINUTES`の環境変数フォールバック分岐を直接テスト）、`tests/unit/test_schemas.py`への`LoginRequest`/`CartItemOut`/`OrderItemOut`/`OrderOut`テスト追加、`tests/unit/test_models.py`への実DB挙動テスト（unique制約・relationship永続化）追加、`tests/unit/test_database.py`のreload副作用修正（moduleスコープのautouseフィクスチャで復元）を行った結果、前回（73.0%）から**+5.5pt**改善した（累計では初回41.8%比で**+36.7pt**）。
 
 内訳の変化: schemas.pyは6件生存が0件（全滅）、auth.pyは15件から9件、models.pyは17件から16件へ改善。database.py・main.py・seed.py・routersは今回のテストでは変化なし（database.pyはreloadの衛生修正のみで新規カバレッジ追加はしていないため）。
 

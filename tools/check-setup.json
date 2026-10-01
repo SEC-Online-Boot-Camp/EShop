@@ -7,9 +7,9 @@
   "requiredFiles": ["backend/app/coupon.py"],
   "requiredDocs": [
     {
-      "path": "docs/要件整理メモ.md",
-      "message": "No.2 で作った要件整理メモ（docs\\要件整理メモ.md）が無い",
-      "fix": "03-01 前提条件: No.2 の要件整理メモを EShop\\docs に置く"
+      "path": "docs/要件整理.md",
+      "message": "No.2 で作った要件整理（docs\\要件整理.md）が無い",
+      "fix": "03-01 前提条件: No.2 の要件整理を EShop\\docs に置く"
     }
   ],
   "requiredTables": ["users", "products", "cart_items", "carts", "coupons", "orders", "order_items"],

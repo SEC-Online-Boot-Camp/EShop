@@ -13,7 +13,7 @@ AI活用入門講座（SW編）の**No.1・No.2**で使用する、既存ECサ�
 | :--- | :--- |
 | `backend/` | FastAPI のバックエンド（API・テスト） |
 | `frontend/` | React + TypeScript + Vite の画面。詳細は [frontend/README.md](frontend/README.md) |
-| `docs/` | 既存機能の基本設計書。No.2 でクーポン機能を追記する |
+| `docs/` | 既存機能の基本設計書と、No.2 の入力の要望メモ（`要望メモ.md`）。No.2 でクーポン機能を基本設計書に追記する |
 | `tools/` | 講座当日の診断スクリプト（`check-setup.ps1`）と、診断の期待値（`check-setup.json`） |
 | `.vscode/` | VS Code のテストパネルで、backend の pytest を `backend/` から動かす設定 |
 
@@ -21,7 +21,7 @@ CI と Claude による PR レビュー（`.github/`）は講座では使わな�
 
 ## セットアップ
 
-セットアップ手順は、講座で配布される「01-01-研修用プロジェクト構築手順.md」を参照してください。
+セットアップ手順は、講座で配布される「01-01-研修用プロジェクト構築.md」を参照してください。
 
 バックエンドの依存は `backend/pyproject.toml` と `backend/uv.lock` で固定しています。[uv](https://docs.astral.sh/uv/) を使う場合は、`backend/` で次を実行すると、`backend/.venv` に同じ環境ができます（pip を使う場合は、同じ版の `backend/requirements.txt` を使います）。
 

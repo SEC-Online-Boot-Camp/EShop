@@ -7,7 +7,6 @@
   --accent: #0969da;
   --danger: #cf222e;
   --danger-bg: #ffebe9;
-  --warn-bg: #fff8c5;
   --ok-bg: #dafbe1;
 
   font: 16px/1.6 system-ui, 'Segoe UI', 'Yu Gothic UI', sans-serif;
@@ -102,18 +101,11 @@ body {
   gap: 12px;
 }
 
-.form label,
-.inline-form label {
+.form label {
   display: flex;
   flex-direction: column;
   font-size: 14px;
   color: var(--muted);
-}
-
-.inline-form {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
 }
 
 input {
@@ -172,7 +164,6 @@ button.link-button {
 }
 
 .error,
-.warning,
 .notice {
   padding: 8px 12px;
   border-radius: 6px;
@@ -181,10 +172,6 @@ button.link-button {
 .error {
   color: var(--danger);
   background: var(--danger-bg);
-}
-
-.warning {
-  background: var(--warn-bg);
 }
 
 .notice {

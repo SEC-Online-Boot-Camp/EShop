@@ -470,7 +470,7 @@ function Set-CheckList {
         return $r
     }
 
-    New-Check -Id 'D2-2' -Group 'リポジトリ' -Title 'ブランチと作業の状態' -Ref '03-01 手順0' -Cmd {
+    New-Check -Id 'D2-2' -Group 'リポジトリ' -Title 'ブランチと作業の状態' -Ref '03-01 手順1' -Cmd {
         $br = $script:Dx.Branch
         "ブランチ   => $(if ($br) { $br } else { '（どのブランチにもいない）' })"
         $gd = @(Invoke-DxGit rev-parse --git-dir)[0]
@@ -571,11 +571,11 @@ function Set-CheckList {
             # デバッグでコードを直す段階。既存のテストだけは変えない
             if ($tests.Count -gt 0) {
                 Write-Mark '注意' '配布された既存のテストが書き換えられている'
-                Write-Fix '03-02 手順2: backend で git restore tests/<ファイル名> で戻す'
+                Write-Fix '03-03 手順2: backend で git restore tests/<ファイル名> で戻す'
                 $r = '注意'
             }
             if ($app.Count -gt 0) {
-                Write-Mark '参考' 'backend/app を変えている（03-03 のデバッグで直した分なら問題ない）'
+                Write-Mark '参考' 'backend/app を変えている（03-04 のデバッグで直した分なら問題ない）'
             }
         }
         if ($r -eq 'OK') { Write-Mark 'OK' '手順書どおりの状態' }
@@ -733,7 +733,7 @@ print("mismatch: %d" % bad)
 
     # ====================== データベース ======================
 
-    New-Check -Id 'D4-1' -Group 'データベース' -Title '初期データ（backend\ecommerce.db）' -Ref '01-01 手順3・03-01 手順0-2' -Cmd {
+    New-Check -Id 'D4-1' -Group 'データベース' -Title '初期データ（backend\ecommerce.db）' -Ref '01-01 手順3・03-01 手順2' -Cmd {
         $py = Get-DxPython
         if (-not $py) { $py = (Get-Command python -ErrorAction SilentlyContinue | Select-Object -First 1).Source }
         if (-not $py) { 'python が無いため確認しない'; return }
@@ -786,7 +786,7 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
         param($text)
         $ex = $script:Dx.Expect
         # seed の手順はブランチで違うので期待値から引く。読めなければ両方を挙げる
-        $seed = if ($ex.Error) { '01-01 手順3・03-01 手順0-2 のうち、いまの段階のもの' } else { $ex.SeedStep }
+        $seed = if ($ex.Error) { '01-01 手順3・03-01 手順2 のうち、いまの段階のもの' } else { $ex.SeedStep }
         if ($text -match 'python が無い') { Write-Mark '未確認' 'python が無い（D1-1）'; return '未確認' }
         if ($text -match 'EShop直下の ecommerce\.db => あり') {
             Write-Mark '参考' 'EShop 直下にも ecommerce.db がある。backend 以外で seed を実行したもので、使われない'
@@ -891,7 +891,7 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
     # ====================== テスト ======================
 
     if (-not $SkipTest) {
-        New-Check -Id 'D6-1' -Group 'テスト' -Title '配布されたテスト（pytest）' -Ref '01-01 手順4・03-01 手順0-2' -Cmd {
+        New-Check -Id 'D6-1' -Group 'テスト' -Title '配布されたテスト（pytest）' -Ref '01-01 手順4・03-01 手順2' -Cmd {
             $py = Get-DxPython
             if (-not $py) { '仮想環境が無いため実行しない'; return }
             # 実行するのは配布されたテストだけ。自分で作ったテストは演習の途中では失敗してよいので、
@@ -969,7 +969,7 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
             if ($expect -gt 0 -and $passed -ne $expect) {
                 Write-Mark '注意' "すべて PASS だが、件数が基準（${expect}件）と違う（${passed}件）"
                 if ($text -match '書き換えた既存テスト => (?!なし)' -or $text -match '消えた既存テスト') {
-                    Write-Fix '03-02 手順2: 書き換えた・消した既存テストを backend で git restore tests/<ファイル名> で戻す'
+                    Write-Fix '03-03 手順2: 書き換えた・消した既存テストを backend で git restore tests/<ファイル名> で戻す'
                 } else {
                     Write-Fix '講師に申し出る（ブランチの状態を一緒に確かめる）'
                 }

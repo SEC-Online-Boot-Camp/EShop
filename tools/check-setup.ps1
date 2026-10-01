@@ -251,7 +251,21 @@ function Read-DxExpect([string]$RepoDir) {
     if ($j.changedCode -notin 'keep', 'debug') { return @{ Error = 'tools\check-setup.json の changedCode は keep か debug' } }
     $tests = 0
     if (-not [int]::TryParse("$($j.expectedTests)", [ref]$tests) -or $tests -lt 1) { return @{ Error = 'tools\check-setup.json の expectedTests が数でない' } }
-    $files = @($j.requiredFiles | Where-Object { $null -ne $_ } | ForEach-Object { "$_" })
+    # テストの置き場（backend\tests の下のフォルダ。integration・unit）ごとの件数。表示に使い、判定は
+    # 合計（expectedTests）で行う。無ければ内訳の基準は出さない。あれば合計と合っていること
+    $byLevel = [ordered]@{}
+    if ($null -ne $j.expectedTestsByLevel) {
+        if ($j.expectedTestsByLevel -isnot [System.Management.Automation.PSCustomObject]) { return @{ Error = 'tools\check-setup.json の expectedTestsByLevel の形が違う' } }
+        foreach ($p in $j.expectedTestsByLevel.PSObject.Properties) {
+            $n = 0
+            if ($p.Name -notmatch '^[a-z]+$' -or -not [int]::TryParse("$($p.Value)", [ref]$n) -or $n -lt 0) { return @{ Error = 'tools\check-setup.json の expectedTestsByLevel に使えない名前か数でない値がある' } }
+            $byLevel[$p.Name] = $n
+        }
+        $sum = 0
+        foreach ($v in $byLevel.Values) { $sum += $v }
+        if ($sum -ne $tests) { return @{ Error = 'tools\check-setup.json の expectedTestsByLevel の合計が expectedTests と合わない' } }
+    }
+    $files =@($j.requiredFiles | Where-Object { $null -ne $_ } | ForEach-Object { "$_" })
     $tables = @($j.requiredTables | Where-Object { $null -ne $_ } | ForEach-Object { "$_" })
     if (@($tables | Where-Object { $_ -notmatch $ident }).Count -gt 0) { return @{ Error = 'tools\check-setup.json の requiredTables に使えない名前がある' } }
     $cols = @()
@@ -272,7 +286,7 @@ function Read-DxExpect([string]$RepoDir) {
         Error = $null
         Branch = $j.branch.Trim(); Stage = $j.stage.Trim(); SeedStep = $j.seedStep.Trim()
         SwitchStep = $(if (& $str $j.switchStep) { $j.switchStep.Trim() } else { $null })
-        ChangedCode = $j.changedCode; ExpectedTests = $tests
+        ChangedCode = $j.changedCode; ExpectedTests = $tests; ExpectedByLevel = $byLevel
         Files = $files; Docs = $docs; Tables = $tables; Columns = $cols
         TestFailFix = @($j.testFailFix | Where-Object { & $str $_ })
     }
@@ -297,6 +311,29 @@ function Get-DxPython {
     $p = Join-Path $script:Dx.Src '.venv\Scripts\python.exe'
     if (Test-Path $p) { return $p }
     return $null
+}
+
+function Get-DxRestoreFix([string[]]$Paths) {
+    # 書き換えた・消した既存テストを戻すコマンド。テストは backend\tests の下のフォルダ
+    # （integration・unit）に分かれているので、変わったファイルを backend からのパスでそのまま出す
+    $rel = @($Paths | Where-Object { $_ -match '^backend/tests/' } | ForEach-Object { $_ -replace '^backend/', '' } | Select-Object -Unique)
+    if ($rel.Count -eq 0) { $rel = @('tests/<フォルダ>/<ファイル名>') }
+    return "git restore $($rel -join ' ')"
+}
+
+function Get-DxTestLevel([string]$Path) {
+    # テストの置き場（backend/tests/<フォルダ>/test_*.py のフォルダ名）。tests の直下なら空
+    if ($Path -match '^backend/tests/([^/]+)/test_[^/]*\.py$') { return $Matches[1] }
+    return ''
+}
+
+function Get-DxTestLevelLabel([string]$Level) {
+    switch ($Level) {
+        'integration' { '結合テスト（integration）' }
+        'unit' { '単体テスト（unit）' }
+        '' { 'tests の直下' }
+        default { $Level }
+    }
 }
 
 function Invoke-DxPython([string]$Python, [string]$Code, [string[]]$Arguments) {
@@ -571,7 +608,9 @@ function Set-CheckList {
             # デバッグでコードを直す段階。既存のテストだけは変えない
             if ($tests.Count -gt 0) {
                 Write-Mark '注意' '配布された既存のテストが書き換えられている'
-                Write-Fix '03-03 手順2: backend で git restore tests/<ファイル名> で戻す'
+                # 名前を変えた（R）ときは元のパス（行の最初のパス）を戻す
+                $paths = @($tests | ForEach-Object { @($_.Trim() -split '\s+' | Where-Object { $_ -match '^backend/tests/' })[0] })
+                Write-Fix "03-03 手順2: backend で $(Get-DxRestoreFix $paths) で戻す"
                 $r = '注意'
             }
             if ($app.Count -gt 0) {
@@ -896,14 +935,23 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
             if (-not $py) { '仮想環境が無いため実行しない'; return }
             # 実行するのは配布されたテストだけ。自分で作ったテストは演習の途中では失敗してよいので、
             # ここでは数えない
+            # テストは tests の下のフォルダ（integration・unit）に分けて置いてある。tests の直下と、
+            # その1つ下のフォルダの test_*.py を見る
             $dist = @(Invoke-DxGit ls-tree -r --name-only $script:Dx.Base '--' backend/tests |
-                Where-Object { $_ -match '^backend/tests/test_[^/]*\.py$' })
-            $here = @(Get-ChildItem (Join-Path $script:Dx.Src 'tests') -Filter 'test_*.py' -ErrorAction SilentlyContinue |
+                Where-Object { $_ -match '^backend/tests/([^/]+/)?test_[^/]*\.py$' })
+            $testsDir = Join-Path $script:Dx.Src 'tests'
+            $here = @(Get-ChildItem $testsDir -Filter 'test_*.py' -File -ErrorAction SilentlyContinue |
                 ForEach-Object { "backend/tests/$($_.Name)" })
+            foreach ($sub in @(Get-ChildItem $testsDir -Directory -ErrorAction SilentlyContinue)) {
+                $here += @(Get-ChildItem $sub.FullName -Filter 'test_*.py' -File -ErrorAction SilentlyContinue |
+                    ForEach-Object { "backend/tests/$($sub.Name)/$($_.Name)" })
+            }
             $mine = @($here | Where-Object { $dist -notcontains $_ })
             $gone = @($dist | Where-Object { $here -notcontains $_ })
             $mod = @(Invoke-DxGit diff --name-only --diff-filter=M $script:Dx.Base '--' backend/tests | Where-Object { $_ })
-            "配布されたテスト   => $($dist.Count)ファイル（これだけを実行する）"
+            $levels = @($dist | ForEach-Object { Get-DxTestLevel $_ } | Select-Object -Unique)
+            $perFile = @($levels | ForEach-Object { $lv = $_; "$(Get-DxTestLevelLabel $lv) $(@($dist | Where-Object { (Get-DxTestLevel $_) -eq $lv }).Count)" }) -join '・'
+            "配布されたテスト   => $($dist.Count)ファイル（$perFile。これだけを実行する）"
             "自分で作ったテスト => $(if ($mine.Count -gt 0) { $mine -join ', ' } else { 'なし' })（実行しない）"
             "書き換えた既存テスト => $(if ($mod.Count -gt 0) { $mod -join ', ' } else { 'なし' })"
             if ($gone.Count -gt 0) { "消えた既存テスト   => $($gone -join ', ')" }
@@ -922,7 +970,31 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
             $null = New-Item -ItemType Directory -Path $tmp -Force
             Push-Location -LiteralPath $tmp
             try {
-                & $py -m pytest -q -p no:cacheprovider --rootdir $script:Dx.Src --disable-warnings --tb=line -rfE @rel 2>&1 | ForEach-Object { "$_" }
+                # 置き場ごとの件数を数えるため、結果を一時フォルダの XML にも書かせる（-q では XML の場所を表示しない）
+                $xml = Join-Path $tmp 'result.xml'
+                & $py -m pytest -q -p no:cacheprovider --rootdir $script:Dx.Src --disable-warnings --tb=line -rfE --junitxml $xml @rel 2>&1 | ForEach-Object { "$_" }
+                if (Test-Path -LiteralPath $xml) {
+                    try {
+                        [xml]$doc = Get-Content -LiteralPath $xml -Raw -Encoding UTF8
+                        # classname は backend からのパスを . でつないだもの（tests.integration.test_cart.TestAddItem など）
+                        $pass = [ordered]@{}
+                        foreach ($lv in $levels) { $pass[$lv] = 0 }
+                        foreach ($tc in @($doc.SelectNodes('//testcase'))) {
+                            if ($tc.SelectSingleNode('failure|error|skipped')) { continue }
+                            $lv = if ("$($tc.classname)" -match '^tests\.([^.]+)\.test_') { $Matches[1] } else { '' }
+                            if (-not $pass.Contains($lv)) { $pass[$lv] = 0 }
+                            $pass[$lv] += 1
+                        }
+                        ''
+                        "PASS の内訳 => $(@($pass.Keys | ForEach-Object { "$(Get-DxTestLevelLabel $_) $($pass[$_])件" }) -join '・')"
+                        $ex = $script:Dx.Expect
+                        if (-not $ex.Error -and $script:Dx.Branch -eq $ex.Branch -and $ex.ExpectedByLevel.Count -gt 0) {
+                            "基準の内訳 => $(@($ex.ExpectedByLevel.Keys | ForEach-Object { "$(Get-DxTestLevelLabel $_) $($ex.ExpectedByLevel[$_])件" }) -join '・')"
+                        }
+                    } catch {
+                        'PASS の内訳 => 結果を読めない'
+                    }
+                }
             } finally {
                 Pop-Location
                 $env:PYTHONDONTWRITEBYTECODE = $prevB
@@ -969,13 +1041,17 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
             if ($expect -gt 0 -and $passed -ne $expect) {
                 Write-Mark '注意' "すべて PASS だが、件数が基準（${expect}件）と違う（${passed}件）"
                 if ($text -match '書き換えた既存テスト => (?!なし)' -or $text -match '消えた既存テスト') {
-                    Write-Fix '03-03 手順2: 書き換えた・消した既存テストを backend で git restore tests/<ファイル名> で戻す'
+                    # 上の出力の「書き換えた既存テスト」「消えた既存テスト」の行から、戻すファイルを引く
+                    $paths = @([regex]::Matches($text, '(?m)^(?:書き換えた既存テスト|消えた既存テスト)\s*=> (.+?)\s*$') |
+                        ForEach-Object { $_.Groups[1].Value -split ',\s*' })
+                    Write-Fix "03-03 手順2: 書き換えた・消した既存テストを backend で $(Get-DxRestoreFix $paths) で戻す"
                 } else {
                     Write-Fix '講師に申し出る（ブランチの状態を一緒に確かめる）'
                 }
                 return '注意'
             }
-            Write-Mark 'OK' "${passed}件すべて PASS$(if ($expect -gt 0) { '（基準どおり）' })"
+            $split = if ($text -match '(?m)^PASS の内訳 => (.+?)\s*$') { "。$($Matches[1])" } else { '' }
+            Write-Mark 'OK' "${passed}件すべて PASS$(if ($expect -gt 0) { '（基準どおり）' })$split"
             return 'OK'
         }
     }

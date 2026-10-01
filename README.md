@@ -41,7 +41,7 @@ No.3では実装作業は行いません。この実装に対して**試験観�
 | :--- | :--- |
 | `backend/` | FastAPI のバックエンド（API・テスト） |
 | `frontend/` | React + TypeScript + Vite の画面（クーポンの適用・解除を含む）。詳細は [frontend/README.md](frontend/README.md) |
-| `docs/` | クーポン機能を追記した確定版の基本設計書（[docs/基本設計書.md](docs/基本設計書.md)）と、No.2 の入力の要望メモ（[docs/要望メモ.md](docs/要望メモ.md)） |
+| `docs/` | クーポン機能を追記した確定版の基本設計書（[docs/基本設計書.md](docs/基本設計書.md)）と、既存機能の結合テストの試験観点シート（[docs/試験観点シート.md](docs/試験観点シート.md)）、No.2 の入力の要望メモ（[docs/要望メモ.md](docs/要望メモ.md)） |
 | `tools/` | 講座当日の診断スクリプト（`check-setup.ps1`）と、診断の期待値（`check-setup.json`） |
 | `.vscode/` | VS Code のテストパネルで、backend の pytest を `backend/` から動かす設定 |
 
@@ -66,7 +66,7 @@ No.1で作ったDBをそのまま使うと、注文確定で`table orders has no
 エラーになります。DBの中身はすべて`seed`で作り直せます。
 
 `python -m app.seed`はユーザー2件・商品5件・クーポン6件を投入します。
-`pytest` は既存テスト55件がすべてPASSします。これが**回帰試験の基準線**です。
+`pytest` は既存テスト67件（結合テスト18件・単体テスト49件）がすべてPASSします。これが**回帰試験の基準線**です。
 No.3で追加するテストを含めて全件PASSするところまで持っていくのが最終ゴールになります。
 
 バックエンドの依存は `backend/pyproject.toml` と `backend/uv.lock` で固定しています。[uv](https://docs.astral.sh/uv/) を使う場合は、`backend/` で次を実行すると、`backend/.venv` に同じ環境ができます（pip を使う場合は、同じ版の `backend/requirements.txt` を使います）。
@@ -85,6 +85,15 @@ npm install
 npm run dev
 ```
 
+テストは `backend/` で実行する。`backend/tests/` には、API を外から呼ぶ結合テスト（`tests/integration/`、18件）と、
+開発者が書いた関数単位の単体テスト（`tests/unit/`、49件）がある。単体テストは開発者が書いたもので、受講者は変更しない。
+
+```bash
+pytest                     # すべて（67件）
+pytest tests/integration   # 結合テストだけ（18件）
+pytest tests/unit          # 単体テストだけ（49件）
+```
+
 カバレッジを確認したい場合は、`backend/` で以下を実行する。
 
 ```bash
@@ -100,7 +109,7 @@ pytest --cov=app --cov-report=html
 既存テストがどこまで保証していてどこからが未検証か（ミューテーションテストの結果を含む）は [backend/TESTING.md](backend/TESTING.md) を参照。
 
 > TESTING.mdに載っているカバレッジ・ミューテーションテストの数値は、いずれも**クーポン機能を追加する前**の
-> 既存コードに対する実測値です。クーポン機能のテストは1件も入っていません。
+> 既存コードに対する実測値です。クーポン機能の結合テストは1件も入っていません（`tests/unit/` にある単体テストは開発者が書いたもので、受講者は変更しません）。
 > TESTING.mdが言う「未検証の外側」がクーポン部分そのものであり、そこを埋めるのがNo.3の課題です。
 
 ## API一覧

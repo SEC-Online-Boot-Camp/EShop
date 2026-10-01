@@ -5,8 +5,10 @@ AI活用入門講座（SW編）で使用する、既存ECサイトを模したFa
 > **このブランチ（`coupon`）は、クーポン/割引適用機能を実装済みの状態です。**
 > No.1・No.2で使う開始状態（クーポン機能なし）は `main` ブランチにあります。
 > No.1・No.2で使ってきたフォルダのまま、次のように切り替えます。
+> 01-01 の clone は `main` だけを取得しているため、1行目で `coupon` を取得の対象に加えます。
 >
 > ```powershell
+> git remote set-branches --add origin coupon
 > git fetch origin
 > git switch coupon
 > ```
@@ -30,7 +32,7 @@ No.3では実装作業は行いません。この実装に対して**試験観�
 | `backend/` | FastAPI のバックエンド（API・テスト） |
 | `frontend/` | React + TypeScript + Vite の画面（クーポンの適用・解除を含む）。詳細は [frontend/README.md](frontend/README.md) |
 | `docs/` | 既存機能の基本設計書（[docs/基本設計書.md](docs/基本設計書.md)） |
-| `tools/` | 講座当日の診断スクリプト（`check-setup.ps1`） |
+| `tools/` | 講座当日の診断スクリプト（`check-setup.ps1`）と、診断の期待値（`check-setup.json`） |
 | `.vscode/` | VS Code のテストパネルで、backend の pytest を `backend/` から動かす設定 |
 
 CI と Claude による PR レビュー（`.github/`）は講座では使わないため、`github-config` ブランチに残しています。

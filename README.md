@@ -5,15 +5,18 @@ AI活用入門講座（SW編）で使用する、既存ECサイトを模したFa
 > **このブランチ（`coupon`）は、クーポン/割引適用機能を実装済みの状態です。**
 > No.1・No.2で使う開始状態（クーポン機能なし）は `main` ブランチにあります。
 > No.1・No.2で使ってきたフォルダのまま、次のように切り替えます。
-> 01-01 の clone は `main` だけを取得しているため、1行目で `coupon` を取得の対象に加えます。
+> 1行目で自分の設計を `docs/基本設計書_<氏名>.md` に残し、2行目で `docs/基本設計書.md` を配布時の状態に戻します（切り替えると確定版になるため）。
+> 01-01 の clone は `main` だけを取得しているため、3行目で `coupon` を取得の対象に加えます。
 >
 > ```powershell
+> Copy-Item docs\基本設計書.md docs\基本設計書_<氏名>.md
+> git restore docs\基本設計書.md
 > git remote set-branches --add origin coupon
 > git fetch origin
 > git switch coupon
 > ```
 >
-> `docs/`に保存した成果物や`.env`への変更はそのまま残ります。
+> `docs/要件整理.md` と `.env` への変更はそのまま残ります。`docs/基本設計書.md` は、レビューを経て確定した版になります（自分の設計は `docs/基本設計書_<氏名>.md` に残ります）。
 
 No.3では実装作業は行いません。この実装に対して**試験観点を洗い出し、テストコードを書き、
 見つかった不具合をデバッグする**のが課題です。
@@ -31,7 +34,7 @@ No.3では実装作業は行いません。この実装に対して**試験観�
 | :--- | :--- |
 | `backend/` | FastAPI のバックエンド（API・テスト） |
 | `frontend/` | React + TypeScript + Vite の画面（クーポンの適用・解除を含む）。詳細は [frontend/README.md](frontend/README.md) |
-| `docs/` | 既存機能の基本設計書（[docs/基本設計書.md](docs/基本設計書.md)）と、No.2 の入力の要望メモ（[docs/要望メモ.md](docs/要望メモ.md)） |
+| `docs/` | クーポン機能を追記した確定版の基本設計書（[docs/基本設計書.md](docs/基本設計書.md)）と、No.2 の入力の要望メモ（[docs/要望メモ.md](docs/要望メモ.md)） |
 | `tools/` | 講座当日の診断スクリプト（`check-setup.ps1`）と、診断の期待値（`check-setup.json`） |
 | `.vscode/` | VS Code のテストパネルで、backend の pytest を `backend/` から動かす設定 |
 
@@ -106,7 +109,7 @@ pytest --cov=app --cov-report=html
 | DELETE   | /cart/coupon   | 適用中のクーポンを取り消す               | 要   |
 | POST     | /orders        | 注文確定（クーポンの再検証・消費を含む） | 要   |
 
-既存機能の詳しい仕様（業務ルール・権限・データモデル・エラーなど）は [docs/基本設計書.md](docs/基本設計書.md) を参照。
+既存機能とクーポン機能の詳しい仕様（業務ルール・権限・データモデル・エラーなど）は [docs/基本設計書.md](docs/基本設計書.md) を参照。
 
 ## クーポン機能の実装内容
 

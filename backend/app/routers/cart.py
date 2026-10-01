@@ -136,7 +136,7 @@ def _build_cart_out(db: Session, user: User) -> CartOut:
         try:
             _, _, discount = coupon_service.evaluate(db, cart_items, applied_code)
         except HTTPException:
-            # 適用後にカート内容や在庫状況が変わり、条件を満たさなくなった場合は
+            # 適用後にカート内容や商品の状態が変わり、条件を満たさなくなった場合は
             # 割引なしの金額を返す。確定時（POST /orders）に改めて検証する。
             discount = 0
 

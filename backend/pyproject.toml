@@ -39,4 +39,5 @@ pythonpath = ["."]
 filterwarnings = [
     "ignore:Using `httpx` with `starlette.testclient` is deprecated",
     "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+    "ignore:'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated",
 ]

@@ -13,7 +13,7 @@ AI活用入門講座（SW編）の**No.1・No.2**で使用する、既存ECサ�
 | :--- | :--- |
 | `backend/` | FastAPI のバックエンド（API・テスト） |
 | `frontend/` | React + TypeScript + Vite の画面。詳細は [frontend/README.md](frontend/README.md) |
-| `docs/` | 既存機能の基本設計書と、No.2 の入力の要望メモ（`要望メモ.md`）。No.2 でクーポン機能を基本設計書に追記する |
+| `docs/` | 既存機能の基本設計書と、既存機能の結合テストの試験観点シート（`試験観点シート.md`）、No.2 の入力の要望メモ（`要望メモ.md`）。No.2 でクーポン機能を基本設計書に追記する |
 | `tools/` | 講座当日の診断スクリプト（`check-setup.ps1`）と、診断の期待値（`check-setup.json`） |
 | `.vscode/` | VS Code のテストパネルで、backend の pytest を `backend/` から動かす設定 |
 
@@ -37,6 +37,15 @@ uv sync
 cd frontend
 npm install
 npm run dev
+```
+
+テストは `backend/` で実行する。`backend/tests/` には、API を外から呼ぶ結合テスト（`tests/integration/`、18件）と、
+開発者が書いた関数単位の単体テスト（`tests/unit/`、36件）がある。
+
+```bash
+pytest                     # すべて（54件）
+pytest tests/integration   # 結合テストだけ（18件）
+pytest tests/unit          # 単体テストだけ（36件）
 ```
 
 カバレッジを確認したい場合は、`backend/` で以下を実行する。

@@ -6,5 +6,7 @@
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
   "python.testing.cwd": "${workspaceFolder}/backend",
-  "python.testing.pytestArgs": ["tests"]
+  "python.testing.pytestArgs": ["tests"],
+  // Markdown のプレビューで、列の多い表（試験観点シートなど）の中のコードを折り返す。
+  "markdown.styles": [".vscode/markdown.css"]
 }

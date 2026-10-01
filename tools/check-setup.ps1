@@ -10,6 +10,10 @@
     （%TEMP% に作り、終わったら消す）だけ。pytest にはキャッシュとバイトコードを書かせない。
     .env の値は画面共有に映るため表示しない（キー名と形だけを見る）。
 
+    ブランチごとに違う期待値（期待するブランチ名・段階・要るファイルとテーブル・テストの件数）は
+    同じフォルダの check-setup.json に書いてあり、このスクリプトはどのブランチでも同じ内容にしてある。
+    check-setup.json が無い・読めないときは、ブランチごとの判定を「未確認」にして、ほかの項目を続ける。
+
     起動方法（EShop のフォルダを開いた VS Code のターミナルで、EShop のルートから。上から順に試す）
 
         1) 通常
@@ -76,8 +80,20 @@ function Get-ScriptVersion([string]$RepoDir) {
             # ルートからの相対パス。show-prefix はカレント（ここでは置き場）のルートからの位置を返す
             $rel = "$(& git -C $dir rev-parse --show-prefix 2>$null)".Trim() + $name
             # %cs（コミット日）は古い git では展開されない。形が合わなければ blob ID に回す
-            $log = "$(& git -C $top log -1 --format='%h %cs' -- $rel 2>$null)".Trim()
-            if ($LASTEXITCODE -eq 0 -and $log -match '^[0-9a-f]{7,} \d{4}-\d{2}-\d{2}$') {
+            $log = "$(& git -C $top log -1 --format='%h %cs %H' -- $rel 2>$null)".Trim()
+            if ($LASTEXITCODE -eq 0 -and $log -match '^([0-9a-f]{7,} \d{4}-\d{2}-\d{2}) ([0-9a-f]{40,})$') {
+                $log = $Matches[1]
+                $full = $Matches[2]
+                # 浅い clone（--depth 1）では、境界のコミットがすべてのファイルを足したように見える。
+                # このファイルを最後に変えたコミットまで履歴が届いていないと、境界（clone した時点の
+                # コミット）が返るので、そうと分かるように書き添える
+                $shallow = "$(& git -C $top rev-parse --is-shallow-repository 2>$null)".Trim()
+                if ($shallow -eq 'true') {
+                    $sf = "$(& git -C $top rev-parse --git-path shallow 2>$null)".Trim()
+                    if ($sf -and -not [System.IO.Path]::IsPathRooted($sf)) { $sf = Join-Path $top $sf }
+                    $bounds = @(if ($sf -and (Test-Path -LiteralPath $sf)) { Get-Content -LiteralPath $sf })
+                    if ($bounds.Count -eq 0 -or $bounds -contains $full) { $log += '（浅い clone のため、clone した時点のコミット）' }
+                }
                 $st = "$(& git -C $top status --porcelain -- $rel 2>$null)".Trim()
                 if ($st) { $log += ' ※未コミットの変更あり' }
                 return $log
@@ -210,6 +226,56 @@ function Find-EShopDir([string]$Start) {
         $d = $parent
     }
     return $null
+}
+
+function Read-DxExpect([string]$RepoDir) {
+    # ブランチごとに違う期待値（ブランチ名・段階・要るファイルとテーブル・テストの件数など）は
+    # tools\check-setup.json に置く。本文をどのブランチでも同じにしておき、違いをこのファイル
+    # だけに出すため。起動方法3でも読めるよう、見つけた EShop のルートから引く。
+    # 読めなくてもほかの項目は診断したいので、例外で止めず、理由を Error に入れて返す
+    $f = Join-Path $RepoDir 'tools\check-setup.json'
+    if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { return @{ Error = 'tools\check-setup.json が無い' } }
+    try {
+        $j = Get-Content -LiteralPath $f -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        # 例外の文面はファイルの中身を長く引用して読みにくいので、理由だけにする
+        return @{ Error = 'tools\check-setup.json を JSON として読めない' }
+    }
+    if ($null -eq $j -or $j -isnot [System.Management.Automation.PSCustomObject]) { return @{ Error = 'tools\check-setup.json の形が違う' } }
+    # 名前は Python の SQL にそのまま埋めるので、識別子の形だけを通す
+    $ident = '^[A-Za-z_][A-Za-z0-9_]*$'
+    $str = { param($v) ($v -is [string]) -and $v.Trim() }
+    foreach ($k in 'branch', 'stage', 'seedStep') {
+        if (-not (& $str $j.$k)) { return @{ Error = "tools\check-setup.json の $k が無い" } }
+    }
+    if ($j.changedCode -notin 'keep', 'debug') { return @{ Error = 'tools\check-setup.json の changedCode は keep か debug' } }
+    $tests = 0
+    if (-not [int]::TryParse("$($j.expectedTests)", [ref]$tests) -or $tests -lt 1) { return @{ Error = 'tools\check-setup.json の expectedTests が数でない' } }
+    $files = @($j.requiredFiles | Where-Object { $null -ne $_ } | ForEach-Object { "$_" })
+    $tables = @($j.requiredTables | Where-Object { $null -ne $_ } | ForEach-Object { "$_" })
+    if (@($tables | Where-Object { $_ -notmatch $ident }).Count -gt 0) { return @{ Error = 'tools\check-setup.json の requiredTables に使えない名前がある' } }
+    $cols = @()
+    if ($j.requiredColumns) {
+        foreach ($p in $j.requiredColumns.PSObject.Properties) {
+            foreach ($c in @($p.Value | Where-Object { $null -ne $_ } | ForEach-Object { "$_" })) {
+                if ($p.Name -notmatch $ident -or $c -notmatch $ident) { return @{ Error = 'tools\check-setup.json の requiredColumns に使えない名前がある' } }
+                $cols += "$($p.Name).$c"
+            }
+        }
+    }
+    $docs = @()
+    foreach ($d in @($j.requiredDocs | Where-Object { $null -ne $_ })) {
+        if (-not (& $str $d.path) -or -not (& $str $d.message) -or -not (& $str $d.fix)) { return @{ Error = 'tools\check-setup.json の requiredDocs には path・message・fix が要る' } }
+        $docs += [pscustomobject]@{ Path = $d.path; Message = $d.message; Fix = $d.fix }
+    }
+    return @{
+        Error = $null
+        Branch = $j.branch.Trim(); Stage = $j.stage.Trim(); SeedStep = $j.seedStep.Trim()
+        SwitchStep = $(if (& $str $j.switchStep) { $j.switchStep.Trim() } else { $null })
+        ChangedCode = $j.changedCode; ExpectedTests = $tests
+        Files = $files; Docs = $docs; Tables = $tables; Columns = $cols
+        TestFailFix = @($j.testFailFix | Where-Object { & $str $_ })
+    }
 }
 
 function Invoke-DxGit {
@@ -424,12 +490,19 @@ function Set-CheckList {
         "docs       => $(if ($docs.Count -gt 0) { $docs -join ', ' } else { '無い' })"
         "基本設計書.md => $(if (Test-Path (Join-Path $script:Dx.Repo 'docs\基本設計書.md')) { 'あり' } else { '無い' })"
         "要件整理メモ.md => $(if (Test-Path (Join-Path $script:Dx.Repo 'docs\要件整理メモ.md')) { 'あり' } else { '無い' })"
-        "coupon.py  => $(if (Test-Path (Join-Path $script:Dx.Src 'app\coupon.py')) { 'あり' } else { 'なし' })"
-        $oc = @(Invoke-DxGit rev-parse --verify --quiet origin/coupon)
-        "origin/coupon => $(if ($LASTEXITCODE -eq 0 -and $oc.Count -gt 0) { '取得済み' } else { 'まだ無い（git fetch origin で取得する）' })"
+        # この段階で要るファイル（期待値の requiredFiles）。名前は期待値から引き、本文には書かない
+        $ex = $script:Dx.Expect
+        if ($ex.Error) { "必須ファイル => 未確認（$($ex.Error)）" }
+        elseif ($ex.Files.Count -eq 0) { '必須ファイル => （この段階には無い）' }
+        else {
+            foreach ($f in $ex.Files) {
+                "必須ファイル => ${f}: $(if (Test-Path -LiteralPath (Join-Path $script:Dx.Repo ($f -replace '/', '\'))) { 'あり' } else { 'なし' })"
+            }
+        }
     } -Hint {
         param($text)
         $br = $script:Dx.Branch
+        $ex = $script:Dx.Expect
         if ($text -match '基本設計書\.md => 無い') {
             Write-Mark 'NG' 'docs\基本設計書.md が無い（配布時から入っていて、No.2 で追記するファイル）'
             Write-Fix '名前を変えたなら元の名前に戻す。消した場合は、自分で戻さず講師に申し出る'
@@ -449,41 +522,49 @@ function Set-CheckList {
         $app = @($lines | Where-Object { $_ -match 'backend/app/' })
         # 追加（A）は自分で作ったテスト。問題になるのは既存のテストを変えた・消した場合
         $tests = @($lines | Where-Object { $_ -match '^\s+[MDR]\d*\s+backend/tests/' })
+        # ここから先はブランチごとの判定。期待値（tools\check-setup.json）が読めなければ確かめない
+        if ($ex.Error) {
+            Write-Mark '未確認' "ブランチの状態は確かめていない。期待値を読めないため（$($ex.Error)）"
+            Write-Host '        tools\check-setup.json は配布時から入っている。消した・変えた場合は講師に申し出る' -ForegroundColor DarkGray
+            return '未確認'
+        }
+        if ($br -ne $ex.Branch) {
+            Write-Mark '注意' "手順書に無いブランチ（$br）にいる"
+            Write-Fix "この EShop の段階（$($ex.Stage)）では $($ex.Branch) を使う。切り替える前に講師に申し出る"
+            return '注意'
+        }
         $r = 'OK'
-        switch ($br) {
-            'main' {
-                Write-Mark '参考' 'main ブランチ（No.1・No.2 の状態）'
-                if ($app.Count -gt 0 -or $tests.Count -gt 0) {
-                    Write-Mark '注意' '配布されたコード（backend/app・backend/tests）が変わっている'
-                    Write-Fix 'No.1・No.2 ではコードを変えない。No.3 で pytest が失敗する原因になるので、講師と一緒に上の一覧を確かめる'
-                    $r = '注意'
-                }
-            }
-            'coupon' {
-                Write-Mark '参考' 'coupon ブランチ（No.3 以降の状態）'
-                if ($text -match 'coupon\.py  => なし') {
-                    Write-Mark 'NG' 'coupon ブランチなのに app\coupon.py が無い'
-                    Write-Fix '講師に申し出る（03-01 手順0 の切り替えが途中で止まっている可能性がある）'
-                    return 'NG'
-                }
-                if ($text -match '要件整理メモ\.md => 無い') {
-                    Write-Mark '注意' 'No.2 で作った要件整理メモ（docs\要件整理メモ.md）が無い'
-                    Write-Fix '03-01 前提条件: No.2 の要件整理メモを EShop\docs に置く'
-                    $r = '注意'
-                }
-                if ($tests.Count -gt 0) {
-                    Write-Mark '注意' '配布された既存のテストが書き換えられている'
-                    Write-Fix '03-02 手順2: backend で git restore tests/<ファイル名> で戻す'
-                    $r = '注意'
-                }
-                if ($app.Count -gt 0) {
-                    Write-Mark '参考' 'backend/app を変えている（03-03 のデバッグで直した分なら問題ない）'
-                }
-            }
-            default {
-                Write-Mark '注意' "手順書に無いブランチ（$br）にいる"
-                Write-Fix 'No.1・No.2 は main、No.3 以降は coupon を使う。切り替える前に講師に申し出る'
+        Write-Mark '参考' "$br ブランチ（$($ex.Stage)の状態）"
+        $lost = @([regex]::Matches($text, '(?m)^必須ファイル => (.+): なし\s*$') | ForEach-Object { $_.Groups[1].Value.Trim() })
+        if ($lost.Count -gt 0) {
+            Write-Mark 'NG' "$br ブランチなのに $(($lost | ForEach-Object { $_ -replace '/', '\' }) -join '・') が無い"
+            $step = if ($ex.SwitchStep) { "$($ex.SwitchStep) の" } else { 'ブランチの' }
+            Write-Fix "講師に申し出る（${step}切り替えが途中で止まっている可能性がある）"
+            return 'NG'
+        }
+        foreach ($d in $ex.Docs) {
+            if (-not (Test-Path -LiteralPath (Join-Path $script:Dx.Repo ($d.Path -replace '/', '\')))) {
+                Write-Mark '注意' $d.Message
+                Write-Fix $d.Fix
                 $r = '注意'
+            }
+        }
+        if ($ex.ChangedCode -eq 'keep') {
+            # コードを変えない段階。配布されたコードが変わっていれば、後の段階のテストが崩れる
+            if ($app.Count -gt 0 -or $tests.Count -gt 0) {
+                Write-Mark '注意' '配布されたコード（backend/app・backend/tests）が変わっている'
+                Write-Fix "$($ex.Stage) ではコードを変えない。No.3 で pytest が失敗する原因になるので、講師と一緒に上の一覧を確かめる"
+                $r = '注意'
+            }
+        } else {
+            # デバッグでコードを直す段階。既存のテストだけは変えない
+            if ($tests.Count -gt 0) {
+                Write-Mark '注意' '配布された既存のテストが書き換えられている'
+                Write-Fix '03-02 手順2: backend で git restore tests/<ファイル名> で戻す'
+                $r = '注意'
+            }
+            if ($app.Count -gt 0) {
+                Write-Mark '参考' 'backend/app を変えている（03-03 のデバッグで直した分なら問題ない）'
             }
         }
         if ($r -eq 'OK') { Write-Mark 'OK' '手順書どおりの状態' }
@@ -646,34 +727,55 @@ print("mismatch: %d" % bad)
         if (-not $py) { $py = (Get-Command python -ErrorAction SilentlyContinue | Select-Object -First 1).Source }
         if (-not $py) { 'python が無いため確認しない'; return }
         # 読み取り専用で開く（mode=ro）。サーバーが起動中でも中身を変えない。
-        # ファイルが無いときは開かない（開くと空の DB ができてしまう）
+        # ファイルが無いときは開かない（開くと空の DB ができてしまう）。
+        # 表示するテーブルと列は、期待値（tools\check-setup.json）に書いたものだけ。それ以外は数だけを
+        # 出す（別の段階で作った DB でも、この段階で使わない名前を画面に出さない）。
+        # users・products は件数の判定に使うので、期待値が読めなくても数える。
+        # PowerShell 5.1 は空の引数を落とすので、空は - で渡す
         $code = @'
 import os, pathlib, sqlite3, sys
-def main(p):
+def split(s):
+    return [x for x in s.split(",") if x and x != "-"]
+def main(p, want_t, want_c):
     if not os.path.exists(p):
         print("db: missing")
         return
     print("db: exists (%d bytes)" % os.path.getsize(p))
     try:
         con = sqlite3.connect(pathlib.Path(p).resolve().as_uri() + "?mode=ro", uri=True)
-        names = sorted(r[0] for r in con.execute("select name from sqlite_master where type='table'"))
-        print("tables: " + ", ".join(names))
-        for t in ("users", "products", "coupons", "orders"):
+        names = set(r[0] for r in con.execute("select name from sqlite_master where type='table'")
+                    if not r[0].startswith("sqlite_"))
+        if want_t:
+            print("tables: " + ", ".join(t for t in want_t if t in names))
+            print("missing tables: " + (", ".join(t for t in want_t if t not in names) or "none"))
+            print("other tables: %d" % len(names - set(want_t)))
+        for t in want_t + [t for t in ("users", "products") if t not in want_t]:
             if t in names:
                 print("count %s: %d" % (t, con.execute('select count(*) from "%s"' % t).fetchone()[0]))
-        if "orders" in names:
-            print("orders columns: " + ", ".join(r[1] for r in con.execute("pragma table_info(orders)")))
+        if want_c:
+            have, lost = [], []
+            for tc in want_c:
+                t, c = tc.split(".", 1)
+                cols = [r[1] for r in con.execute('pragma table_info("%s")' % t)] if t in names else []
+                (have if c in cols else lost).append(tc)
+            print("columns: " + ", ".join(have))
+            print("missing columns: " + (", ".join(lost) or "none"))
         con.close()
     except Exception as e:
         print("error: %s" % e)
 
-main(sys.argv[1])
+main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
 '@
-        Invoke-DxPython $py $code @((Join-Path $script:Dx.Src 'ecommerce.db'))
+        $ex = $script:Dx.Expect
+        $wantT = if (-not $ex.Error -and $ex.Tables.Count -gt 0) { $ex.Tables -join ',' } else { '-' }
+        $wantC = if (-not $ex.Error -and $ex.Columns.Count -gt 0) { $ex.Columns -join ',' } else { '-' }
+        Invoke-DxPython $py $code @((Join-Path $script:Dx.Src 'ecommerce.db'), $wantT, $wantC)
         "EShop直下の ecommerce.db => $(if (Test-Path (Join-Path $script:Dx.Repo 'ecommerce.db')) { 'あり' } else { 'なし' })"
     } -Hint {
         param($text)
-        $seed = if ($script:Dx.Branch -eq 'coupon') { '03-01 手順0-2' } else { '01-01 手順3' }
+        $ex = $script:Dx.Expect
+        # seed の手順はブランチで違うので期待値から引く。読めなければ両方を挙げる
+        $seed = if ($ex.Error) { '01-01 手順3・03-01 手順0-2 のうち、いまの段階のもの' } else { $ex.SeedStep }
         if ($text -match 'python が無い') { Write-Mark '未確認' 'python が無い（D1-1）'; return '未確認' }
         if ($text -match 'EShop直下の ecommerce\.db => あり') {
             Write-Mark '参考' 'EShop 直下にも ecommerce.db がある。backend 以外で seed を実行したもので、使われない'
@@ -688,9 +790,19 @@ main(sys.argv[1])
             Write-Fix 'サーバーを止めて、backend で Remove-Item ecommerce.db のあと python -m app.seed（中身は seed で作り直せる）'
             return 'NG'
         }
-        if ($script:Dx.Branch -eq 'coupon' -and ($text -notmatch 'orders columns: .*coupon_code' -or $text -notmatch 'tables: .*coupons')) {
-            Write-Mark 'NG' 'No.1 で作った DB のまま。注文確定で table orders has no column named coupon_code になる'
-            Write-Fix '03-01 手順0-2: サーバーを止めて、backend で Remove-Item ecommerce.db のあと python -m app.seed'
+        # 期待値に書いたテーブル・列が DB に無ければ、前の段階で作った DB のまま。名前は Python が
+        # 期待値から拾ったものだけが出る
+        $lostT = if ($text -match '(?m)^missing tables: (.+?)\s*$' -and $Matches[1] -ne 'none') { @($Matches[1] -split ',\s*') } else { @() }
+        $lostC = if ($text -match '(?m)^missing columns: (.+?)\s*$' -and $Matches[1] -ne 'none') { @($Matches[1] -split ',\s*') } else { @() }
+        if ($lostT.Count + $lostC.Count -gt 0) {
+            Write-Mark 'NG' "この段階で要るテーブル・列が DB に無い（$((@($lostT) + @($lostC)) -join '・')）。前の段階で作った DB のまま使っている"
+            if ($lostC.Count -gt 0) {
+                $t, $c = $lostC[0] -split '\.', 2
+                Write-Host "        注文確定などで table $t has no column named $c のエラーになる" -ForegroundColor Yellow
+            } else {
+                Write-Host "        API が no such table: $($lostT[0]) のエラーになる" -ForegroundColor Yellow
+            }
+            Write-Fix "${seed}: サーバーを止めて、backend で Remove-Item ecommerce.db のあと python -m app.seed"
             return 'NG'
         }
         $u = if ($text -match 'count users: (\d+)') { [int]$Matches[1] } else { 0 }
@@ -700,8 +812,13 @@ main(sys.argv[1])
             Write-Fix "${seed}: サーバーを止めて、backend で Remove-Item ecommerce.db のあと python -m app.seed"
             return '注意'
         }
-        if ($script:Dx.Branch -eq 'main' -and $text -match 'tables: .*coupons') {
-            Write-Mark '参考' 'coupon ブランチで作った DB（main で使っても動く）'
+        if ($ex.Error) {
+            Write-Mark '未確認' "初期データは入っているが、要るテーブル・列は確かめていない。期待値を読めないため（$($ex.Error)）"
+            return '未確認'
+        }
+        # 判定には使わない。別の段階の seed で作った DB でも、要るものがそろっていれば動く
+        if ($text -match '(?m)^other tables: [1-9]') {
+            Write-Mark '参考' '別の段階で作った DB（この段階で使わないテーブルがある）。このまま使える'
         }
         Write-Mark 'OK' '初期データが入っている'
         return 'OK'
@@ -824,15 +941,20 @@ main(sys.argv[1])
             }
             if ($failed + $errors -gt 0) {
                 Write-Mark 'NG' "配布されたテストが失敗している（PASS ${passed}件・失敗 ${failed}件・エラー ${errors}件）"
-                if ($script:Dx.Branch -eq 'coupon') {
-                    Write-Fix '03-03 でコードを直したあとなら、その修正が既存の機能を壊している（回帰）。D2-2 の一覧のファイルを git diff で見直す'
-                    Write-Fix '直す前から失敗するなら、03-01 手順0（切り替え）と手順0-2（DBの作り直し）を確かめる'
-                } else {
-                    Write-Fix 'D2-3（.env）と D3-3（依存パッケージ）を先に見る。どちらも OK なら講師に申し出る'
-                }
+                # 段階ごとの直し方は期待値（testFailFix）にある。無ければ、どの段階にも当てはまる直し方
+                $ex = $script:Dx.Expect
+                $fix = if (-not $ex.Error -and $script:Dx.Branch -eq $ex.Branch) { @($ex.TestFailFix) } else { @() }
+                if ($fix.Count -eq 0) { $fix = @('D2-3（.env）と D3-3（依存パッケージ）を先に見る。どちらも OK なら講師に申し出る') }
+                foreach ($f in $fix) { Write-Fix $f }
                 return 'NG'
             }
-            $expect = switch ($script:Dx.Branch) { 'main' { 54 } 'coupon' { 55 } default { 0 } }
+            # 基準の件数はブランチで違うので期待値から引く。手順書に無いブランチでは比べない
+            $ex = $script:Dx.Expect
+            if ($ex.Error) {
+                Write-Mark '未確認' "${passed}件すべて PASS。基準の件数は、期待値を読めないため比べていない（$($ex.Error)）"
+                return '未確認'
+            }
+            $expect = if ($script:Dx.Branch -eq $ex.Branch) { $ex.ExpectedTests } else { 0 }
             if ($expect -gt 0 -and $passed -ne $expect) {
                 Write-Mark '注意' "すべて PASS だが、件数が基準（${expect}件）と違う（${passed}件）"
                 if ($text -match '書き換えた既存テスト => (?!なし)' -or $text -match '消えた既存テスト') {
@@ -916,7 +1038,12 @@ function Invoke-Diagnose {
     $br = "$(@(Invoke-DxGit branch --show-current)[0])".Trim()
     if ($br -match '^(fatal|error):') { $br = '' }
     $script:Dx.Branch = $br
-    $script:Dx.Stage = switch ($br) { 'main' { 'No.1・No.2' } 'coupon' { 'No.3以降' } default { '判定できない' } }
+    # 期待するブランチ名と段階は tools\check-setup.json から読む。いまのブランチが期待と違えば段階は決めない
+    $script:Dx.Expect = Read-DxExpect $repo
+    $ex = $script:Dx.Expect
+    $script:Dx.Stage = if ($ex.Error) { '期待値を読めないため判定できない' }
+                       elseif ($br -and $br -eq $ex.Branch) { $ex.Stage }
+                       else { "期待するブランチ（$($ex.Branch)）と違うため判定できない" }
     $null = @(Invoke-DxGit rev-parse --verify --quiet "origin/$br")
     $script:Dx.Base = if ($br -and $LASTEXITCODE -eq 0) { "origin/$br" } else { 'HEAD' }
 

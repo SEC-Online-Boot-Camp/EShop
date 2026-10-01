@@ -1,0 +1,12 @@
+{
+  "about": "tools/check-setup.ps1 が読む、このブランチの期待値。受講者は編集しない",
+  "branch": "main",
+  "stage": "No.1・No.2",
+  "changedCode": "keep",
+  "requiredFiles": [],
+  "requiredDocs": [],
+  "requiredTables": ["users", "products", "cart_items", "orders", "order_items"],
+  "requiredColumns": {},
+  "seedStep": "01-01 手順3",
+  "expectedTests": 54
+}

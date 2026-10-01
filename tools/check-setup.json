@@ -2,7 +2,7 @@
   "about": "tools/check-setup.ps1 が読む、このブランチの期待値。受講者は編集しない",
   "branch": "coupon",
   "stage": "No.3以降",
-  "switchStep": "03-01 手順0",
+  "switchStep": "03-01 手順1",
   "changedCode": "debug",
   "requiredFiles": ["backend/app/coupon.py"],
   "requiredDocs": [
@@ -16,10 +16,10 @@
   "requiredColumns": {
     "orders": ["coupon_code", "discount_amount"]
   },
-  "seedStep": "03-01 手順0-2",
+  "seedStep": "03-01 手順2",
   "expectedTests": 55,
   "testFailFix": [
-    "03-03 でコードを直したあとなら、その修正が既存の機能を壊している（回帰）。D2-2 の一覧のファイルを git diff で見直す",
-    "直す前から失敗するなら、03-01 手順0（切り替え）と手順0-2（DBの作り直し）を確かめる"
+    "03-04 でコードを直したあとなら、その修正が既存の機能を壊している（回帰）。D2-2 の一覧のファイルを git diff で見直す",
+    "直す前から失敗するなら、03-01 手順1（切り替え）と手順2（DBの作り直し）を確かめる"
   ]
 }

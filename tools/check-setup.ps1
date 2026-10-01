@@ -489,7 +489,8 @@ function Set-CheckList {
         $docs = @(Get-ChildItem (Join-Path $script:Dx.Repo 'docs') -Filter *.md -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
         "docs       => $(if ($docs.Count -gt 0) { $docs -join ', ' } else { '無い' })"
         "基本設計書.md => $(if (Test-Path (Join-Path $script:Dx.Repo 'docs\基本設計書.md')) { 'あり' } else { '無い' })"
-        "要件整理メモ.md => $(if (Test-Path (Join-Path $script:Dx.Repo 'docs\要件整理メモ.md')) { 'あり' } else { '無い' })"
+        "要望メモ.md   => $(if (Test-Path (Join-Path $script:Dx.Repo 'docs\要望メモ.md')) { 'あり' } else { '無い' })"
+        "要件整理.md   => $(if (Test-Path (Join-Path $script:Dx.Repo 'docs\要件整理.md')) { 'あり' } else { '無い' })"
         # この段階で要るファイル（期待値の requiredFiles）。名前は期待値から引き、本文には書かない
         $ex = $script:Dx.Expect
         if ($ex.Error) { "必須ファイル => 未確認（$($ex.Error)）" }

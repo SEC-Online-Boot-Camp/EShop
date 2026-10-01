@@ -21,7 +21,7 @@ CI と Claude による PR レビュー（`.github/`）は講座では使わな�
 
 ## セットアップ
 
-セットアップ手順は、講座で配布される「01-01-研修用プロジェクト構築手順.md」を参照してください。
+セットアップ手順は、講座で配布される「01-01-研修用プロジェクト構築.md」を参照してください。
 
 バックエンドの依存は `backend/pyproject.toml` と `backend/uv.lock` で固定しています。[uv](https://docs.astral.sh/uv/) を使う場合は、`backend/` で次を実行すると、`backend/.venv` に同じ環境ができます（pip を使う場合は、同じ版の `backend/requirements.txt` を使います）。
 

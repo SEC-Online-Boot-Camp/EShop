@@ -111,7 +111,9 @@ python check-publish.py --doc <事前確認書.md のパス>
 
 - 公開の検査: `precheck.ps1`・`README.md`・`check-publish.py`自身に、仕込んだ欠陥の件数・IPアドレス・PACのURL・社内のホスト名とドメイン・利用者名を含むローカルパスが無いかを見る
 - 整合の検査: `New-Step`のステップIDが、事前確認書の章・節と対応しているかを見る。事前確認書は教材リポジトリにあるので、`--doc`でパスを渡したときだけ行う
-- 配布ブランチの検査: `origin/main`・`origin/coupon`の`tools/check-setup.ps1`を`git show`で読み、公開の検査に加えて、hookの作り方（演習の答え）になる語も見る。受講者の作業ツリーに入り、Claude Codeも読むため。両方にあれば同じ内容か（blobが一致するか）も見る。refかファイルが無ければ「省略:」と出して先へ進む。fetchはしないので、手元のリモート追跡ブランチの状態を見る
+- 配布ブランチの検査: `origin/main`・`origin/coupon`の`tools/check-setup.ps1`と、`origin/main`の`tools/check-setup.json`（診断の期待値）を`git show`で読み、公開の検査に加えて、hookの作り方（演習の答え）になる語も見る。受講者の作業ツリーに入り、Claude Codeも読むため。`tools/check-setup.ps1`は両方にあれば同じ内容か（blobが一致するか）も見る。`tools/check-setup.json`はブランチごとに中身が違ってよいので、一致は見ない。refかファイルが無ければ「省略:」と出して先へ進む。fetchはしないので、手元のリモート追跡ブランチの状態を見る
+- `main`の検査: `origin/main`の`tools/check-setup.ps1`・`tools/check-setup.json`と、`main`と同じ内容に保つ`origin/coupon`の`tools/check-setup.ps1`に、couponの実装の手がかりになる語が無いかを見る。`main`はNo.2で受講者が`coupon`の機能を自分で設計するときの作業ツリーで、Claude Codeも読むため。refかファイルが無ければ「省略:」と出して先へ進む
 - `--file <path>`（複数回指定可）: 任意のファイルを、配布ブランチのファイルと同じ基準で検査する。`tools/check-setup.ps1`を`main`・`coupon`へ入れるPRをマージする前に、作業ツリーのファイルを確かめるのに使う
+- `--main-file <path>`（複数回指定可）: 任意のファイルを、`main`のファイルと同じ基準（`--file`の基準に加えて、couponの実装の手がかりになる語）で検査する。PRをマージする前に、作業ツリーの`tools/check-setup.ps1`と`main`向けの`tools/check-setup.json`を確かめるのに使う
 
 **講座当日の診断の項目は`main`・`coupon`の`tools/check-setup.ps1`にある。** 受講者向けの手順書（01-01〜03-02）の手順番号や件数（54件・55件）を変えたら、そちらを直す（`main`と`coupon`は同じ内容に保つ）。

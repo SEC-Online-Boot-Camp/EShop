@@ -17,17 +17,29 @@
         任意のファイルも、配布ブランチのファイルと同じ基準で検査する。main・coupon へ
         tools/check-setup.ps1 を入れる PR をマージする前に、作業ツリーのファイルを確かめるため
 
-検査対象は precheck.ps1・README.md と、このファイル自身。
-このファイルの FORBIDDEN・ALLOW_LINE・FORBIDDEN_DIST の定義行は、検査する語をそのまま
-含むので外す。
+    python check-publish.py --main-file <パス> [--main-file <パス> ...]
+        任意のファイルを、main のファイルと同じ基準（--file の基準に加えて FORBIDDEN_MAIN）
+        で検査する。PR をマージする前に、作業ツリーの tools/check-setup.ps1 と main 向けの
+        tools/check-setup.json を確かめるため
 
-あわせて、配布ブランチ（origin/main・origin/coupon）の tools/check-setup.ps1 を、この
-スクリプトを置いたリポジトリで git show して検査する（fetch はしない）。講座当日の
-診断はこのファイルで行う。ref かファイルが無ければ「省略:」と出して先へ進む。
+検査対象は precheck.ps1・README.md と、このファイル自身。
+このファイルの FORBIDDEN・ALLOW_LINE・FORBIDDEN_DIST・FORBIDDEN_MAIN の定義行は、検査
+する語をそのまま含むので外す。
+
+あわせて、配布ブランチ（origin/main・origin/coupon）の tools/check-setup.ps1 と、
+origin/main の tools/check-setup.json（診断の期待値）を、このスクリプトを置いたリポジトリで
+git show して検査する（fetch はしない）。講座当日の診断はこれらのファイルで行う。ref か
+ファイルが無ければ「省略:」と出して先へ進む。
 配布ブランチのファイルと --file のファイルには、FORBIDDEN に加えて FORBIDDEN_DIST
 （演習の答えになる語）も NG にする。受講者の作業ツリーに入り、Claude Code も読むため。
 main と coupon の両方にあれば blob が同じかも見る（違うと、受講者が git switch coupon
-したときに中身が変わる）。
+したときに中身が変わる）。blob の一致を見るのは tools/check-setup.ps1 だけで、
+tools/check-setup.json はブランチごとに中身が違ってよい。
+
+main は No.2 で受講者がクーポン機能を設計するときの作業ツリーなので、origin/main の
+tools/check-setup.ps1・tools/check-setup.json と、main と同じ blob を保つ
+origin/coupon の tools/check-setup.ps1 には、FORBIDDEN_MAIN（coupon の実装の手がかり）も
+NG にする。こちらも ref かファイルが無ければ「省略:」と出して先へ進む。
 
 結果は OK: / NG: の形で出す。NG が1つでもあれば終了コード 1 で終わる。
 Python 3.11 以上の標準ライブラリだけで動く。ファイルは書き換えない。
@@ -71,9 +83,22 @@ FORBIDDEN_DIST = [
     (r"Edit\|Write", "hook の matcher（演習の答えになる）"),
 ]
 
+# main に入るファイルにだけ加える禁止語（大文字小文字を問わない）。
+# No.2 で受講者がクーポン機能を自分で設計するため、main の tools に実装の手がかりを置かない。
+FORBIDDEN_MAIN = [
+    (r"(?i)coupon", "coupon の実装の手がかり（main に置かない）"),
+    (r"クーポン", "coupon の実装の手がかり（main に置かない）"),
+    (r"割引", "coupon の実装の手がかり（main に置かない）"),
+    (r"(?i)discount", "coupon の実装の手がかり（main に置かない）"),
+]
+
 # 配布ブランチの検査対象
 DIST_REFS = ["origin/main", "origin/coupon"]
 DIST_FILE = "tools/check-setup.ps1"
+DIST_CONFIG = "tools/check-setup.json"  # ブランチごとに中身が違ってよい
+
+# FORBIDDEN_MAIN をかける対象。check-setup.ps1 は main と同じ blob なので coupon 側も見る
+MAIN_SPECS = [f"origin/main:{DIST_FILE}", f"origin/coupon:{DIST_FILE}", f"origin/main:{DIST_CONFIG}"]
 
 
 def read(path: Path) -> str:
@@ -90,11 +115,11 @@ def targets() -> list[str] | None:
 
 
 def definition_lines(text: str) -> set[int]:
-    """FORBIDDEN・ALLOW_LINE・FORBIDDEN_DIST の定義行の行番号。自身を検査するときに外す。"""
+    """FORBIDDEN・ALLOW_LINE・FORBIDDEN_DIST・FORBIDDEN_MAIN の定義行の行番号。自身を検査するときに外す。"""
     skip: set[int] = set()
     inside = False
     for i, line in enumerate(text.splitlines(), 1):
-        if re.match(r"^(FORBIDDEN|ALLOW_LINE|FORBIDDEN_DIST) = \[", line):
+        if re.match(r"^(FORBIDDEN|ALLOW_LINE|FORBIDDEN_DIST|FORBIDDEN_MAIN) = \[", line):
             inside = True
         if inside:
             skip.add(i)
@@ -118,9 +143,9 @@ def find_hits(name: str, text: str, patterns: list[tuple[str, str]], skip: set[i
     return hits
 
 
-def report(hits: list[str], ok_message: str) -> bool:
+def report(hits: list[str], ok_message: str, ng_message: str = "公開できない内容が含まれている") -> bool:
     if hits:
-        print("NG: 公開できない内容が含まれている:\n    " + "\n    ".join(hits), file=sys.stderr)
+        print(f"NG: {ng_message}:\n    " + "\n    ".join(hits), file=sys.stderr)
         return False
     print(ok_message)
     return True
@@ -146,24 +171,46 @@ def check_dist_text(name: str, text: str) -> list[str]:
     return find_hits(name, text, FORBIDDEN + FORBIDDEN_DIST)
 
 
+def show(spec: str) -> tuple[str | None, str | None, bool]:
+    """ref:path を git show で読み、(blob, 本文, 読めたか) を返す。
+
+    ref かファイルが無ければ「省略:」と出して (None, None, True)、読めなければ NG を出して
+    (blob, None, False) を返す。
+    """
+    r = git("rev-parse", "--verify", "--quiet", spec)
+    if r.returncode != 0:
+        print(f"省略: {spec} が無い（ref かファイルが無い）")
+        return None, None, True
+    blob = r.stdout.decode("ascii").strip()
+    r = git("show", spec)
+    if r.returncode != 0:
+        print(f"NG: {spec} を読めない: {r.stderr.decode('utf-8', 'replace').strip()}", file=sys.stderr)
+        return blob, None, False
+    return blob, r.stdout.decode("utf-8-sig", "replace"), True
+
+
 def check_dist() -> bool:
-    """配布ブランチの tools/check-setup.ps1 を検査する。ref かファイルが無ければ省略する。"""
+    """配布ブランチの tools/check-setup.ps1 と main の tools/check-setup.json を検査する。
+
+    ref かファイルが無ければ省略する。blob の一致を見るのは check-setup.ps1 だけ。
+    """
     ok = True
     blobs: dict[str, str] = {}
     kinds = len(FORBIDDEN) + len(FORBIDDEN_DIST)
     for ref in DIST_REFS:
         spec = f"{ref}:{DIST_FILE}"
-        r = git("rev-parse", "--verify", "--quiet", spec)
-        if r.returncode != 0:
-            print(f"省略: {spec} が無い（ref かファイルが無い）")
+        blob, text, readable = show(spec)
+        if blob is None:
             continue
-        blobs[ref] = r.stdout.decode("ascii").strip()
-        r = git("show", spec)
-        if r.returncode != 0:
-            print(f"NG: {spec} を読めない: {r.stderr.decode('utf-8', 'replace').strip()}", file=sys.stderr)
-            ok = False
+        blobs[ref] = blob
+        if text is None:
+            ok = readable and ok
             continue
-        text = r.stdout.decode("utf-8-sig", "replace")
+        ok = report(check_dist_text(spec, text), f"OK: {spec} に公開してはいけない情報は見つからない（{kinds}種類を検査）") and ok
+    spec = f"{DIST_REFS[0]}:{DIST_CONFIG}"
+    _, text, readable = show(spec)
+    ok = readable and ok
+    if text is not None:
         ok = report(check_dist_text(spec, text), f"OK: {spec} に公開してはいけない情報は見つからない（{kinds}種類を検査）") and ok
     if len(blobs) == len(DIST_REFS):
         if len(set(blobs.values())) == 1:
@@ -186,6 +233,38 @@ def check_files(paths: list[str]) -> bool:
             ok = False
             continue
         ok = report(check_dist_text(p, read(path)), f"OK: {p} に公開してはいけない情報は見つからない（{kinds}種類を検査）") and ok
+    return ok
+
+
+def report_main(name: str, text: str) -> bool:
+    """FORBIDDEN_MAIN で検査して結果を出す。"""
+    return report(find_hits(name, text, FORBIDDEN_MAIN),
+                  f"OK: {name} に coupon の実装の手がかりは見つからない（{len(FORBIDDEN_MAIN)}種類を検査）",
+                  "coupon の実装の手がかりが含まれている（main に置かない）")
+
+
+def check_main() -> bool:
+    """main に入るファイル（MAIN_SPECS）に coupon の実装の手がかりが無いかを見る。ref かファイルが無ければ省略する。"""
+    ok = True
+    for spec in MAIN_SPECS:
+        _, text, readable = show(spec)
+        ok = readable and ok
+        if text is not None:
+            ok = report_main(spec, text) and ok
+    return ok
+
+
+def check_main_files(paths: list[str]) -> bool:
+    """--main-file で渡したファイルを、main のファイルと同じ基準で検査する。"""
+    ok = True
+    for p in paths:
+        path = Path(p)
+        if not path.is_file():
+            print(f"NG: --main-file のファイルが見つからない: {p}", file=sys.stderr)
+            ok = False
+            continue
+        ok = check_files([p]) and ok
+        ok = report_main(p, read(path)) and ok
     return ok
 
 
@@ -230,13 +309,18 @@ def main() -> int:
     p.add_argument("--doc", help="事前確認書.md のパス（教材リポジトリ）。渡したときだけ整合検査を行う")
     p.add_argument("--file", action="append", default=[], metavar="PATH",
                    help="配布ブランチのファイルと同じ基準で検査するファイル（複数回指定可）")
+    p.add_argument("--main-file", action="append", default=[], metavar="PATH",
+                   help="main のファイルと同じ基準（--file の基準に加えて coupon の実装の手がかり）で検査するファイル（複数回指定可）")
     a = p.parse_args()
 
     names = targets()
     ok = names is not None and check_publishable(names)
     ok = check_dist() and ok
+    ok = check_main() and ok
     if a.file:
         ok = check_files(a.file) and ok
+    if a.main_file:
+        ok = check_main_files(a.main_file) and ok
     if a.doc:
         ok = check_consistency(Path(a.doc)) and ok
     else:

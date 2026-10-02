@@ -610,7 +610,7 @@ function Set-CheckList {
                 Write-Mark '注意' '配布された既存のテストが書き換えられている'
                 # 名前を変えた（R）ときは元のパス（行の最初のパス）を戻す
                 $paths = @($tests | ForEach-Object { @($_.Trim() -split '\s+' | Where-Object { $_ -match '^backend/tests/' })[0] })
-                Write-Fix "03-03 手順2: backend で $(Get-DxRestoreFix $paths) で戻す"
+                Write-Fix "03-01 手順5: backend で $(Get-DxRestoreFix $paths) で戻す"
                 $r = '注意'
             }
             if ($app.Count -gt 0) {
@@ -1044,7 +1044,7 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
                     # 上の出力の「書き換えた既存テスト」「消えた既存テスト」の行から、戻すファイルを引く
                     $paths = @([regex]::Matches($text, '(?m)^(?:書き換えた既存テスト|消えた既存テスト)\s*=> (.+?)\s*$') |
                         ForEach-Object { $_.Groups[1].Value -split ',\s*' })
-                    Write-Fix "03-03 手順2: 書き換えた・消した既存テストを backend で $(Get-DxRestoreFix $paths) で戻す"
+                    Write-Fix "03-01 手順5: 書き換えた・消した既存テストを backend で $(Get-DxRestoreFix $paths) で戻す"
                 } else {
                     Write-Fix '講師に申し出る（ブランチの状態を一緒に確かめる）'
                 }

@@ -876,7 +876,7 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
 
     # ====================== サーバー ======================
 
-    New-Check -Id 'D5-1' -Group 'サーバー' -Title '8000番とSwagger UI' -Ref '01-01 手順5' -Cmd {
+    New-Check -Id 'D5-1' -Group 'サーバー' -Title '8000番とSwagger UI' -Ref '01-01 手順3' -Cmd {
         # サーバーは起動しない。起動中なら応答を見る（プロキシを通さずに 127.0.0.1 へ直接）
         $pids = @()
         # 実行ポリシーが Restricted の PowerShell 7 では、NetTCPIP モジュールを読み込めずに例外になる。
@@ -903,7 +903,7 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
         param($text)
         if ($text -match '使われていない') {
             Write-Mark 'OK' '8000番は空いている（サーバーは起動していない）'
-            Write-Host '        起動するときは 01-01 手順5: backend で uvicorn app.main:app --reload' -ForegroundColor DarkGray
+            Write-Host '        起動するときは 01-01 手順3: backend で uvicorn app.main:app --reload' -ForegroundColor DarkGray
             return 'OK'
         }
         if ($text -match '使用中: (?!python)\S' -and $text -notmatch '使用中: python') {
@@ -930,7 +930,7 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
     # ====================== テスト ======================
 
     if (-not $SkipTest) {
-        New-Check -Id 'D6-1' -Group 'テスト' -Title '配布されたテスト（pytest）' -Ref '01-01 手順4・03-01 手順2' -Cmd {
+        New-Check -Id 'D6-1' -Group 'テスト' -Title '配布されたテスト（pytest）' -Ref '01-01 手順3・03-01 手順2' -Cmd {
             $py = Get-DxPython
             if (-not $py) { '仮想環境が無いため実行しない'; return }
             # 実行するのは配布されたテストだけ。自分で作ったテストは演習の途中では失敗してよいので、

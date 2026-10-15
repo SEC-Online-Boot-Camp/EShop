@@ -31,6 +31,8 @@ def calc_eligible_subtotal(cart_items, coupon: Coupon) -> int:
     excluded = coupon.excluded_categories or []
     eligible = 0
     for item in cart_items:
+        if item.product.is_sale:
+            continue
         if item.product.category in excluded:
             continue
         eligible += item.product.price * item.quantity
@@ -42,7 +44,7 @@ def calc_discount(coupon: Coupon, eligible_subtotal: int) -> int:
     if coupon.type == "fixed":
         return min(coupon.value, eligible_subtotal)
 
-    discount = round(eligible_subtotal * coupon.value / 100)
+    discount = eligible_subtotal * coupon.value // 100
     if coupon.max_discount_amount is not None:
         discount = min(discount, coupon.max_discount_amount)
     return min(discount, eligible_subtotal)
@@ -58,14 +60,14 @@ def evaluate(db: Session, cart_items, code: str) -> tuple[Coupon, int, int]:
             detail="クーポンの有効期限外です",
         )
 
-    if coupon.used_count >= (coupon.usage_limit or 0):
+    if coupon.usage_limit is not None and coupon.used_count >= coupon.usage_limit:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="クーポンの発行数上限に達しています",
         )
 
     eligible_subtotal = calc_eligible_subtotal(cart_items, coupon)
-    if eligible_subtotal <= coupon.min_purchase_amount:
+    if eligible_subtotal < coupon.min_purchase_amount:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="最低購入金額を満たしていません",
@@ -79,7 +81,8 @@ def consume(db: Session, code: str) -> bool:
     result = db.execute(
         text(
             "UPDATE coupons SET used_count = used_count + 1 "
-            "WHERE code = :code AND used_count < usage_limit"
+            "WHERE code = :code "
+            "AND (usage_limit IS NULL OR used_count < usage_limit)"
         ),
         {"code": code},
     )

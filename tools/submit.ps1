@@ -1,7 +1,8 @@
 ﻿<#
     総合演習（No.4）の提出物を、1つのzipにまとめる
 
-    EShop のフォルダを丸ごと（.git を含む）と、Claude Code の会話の記録（EShop で使った分）を、
+    EShop のフォルダを丸ごと（.git を含む）と、Claude Code の会話の記録（EShop で使った分のうち、
+    04-01 の「No.4 start」のコミットより後の部分）を、
     デスクトップの「提出_<氏名>_<日時>.zip」にまとめる。提出に要るファイルがあるかも確かめる。
     読み取りだけで、EShop の中のファイルは変えない。ネットワークにはつながない（アップロードはしない）。
     作った zip は、受講者が提出先の自分のフォルダへ、ブラウザでアップロードする。
@@ -93,17 +94,64 @@ try {
     Write-Host ''
     Write-Host "EShop のファイル: $n 件（.venv・__pycache__・DB などは入れていない）"
 
-    # Claude Code の会話の記録（EShop で使った分）
+    # Claude Code の会話の記録（EShop で使った分のうち、No.4 の開始より後の部分）
     $config = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
     $projects = Join-Path $config 'projects'
     $sessions = 0
     $encoded = $root -replace '[^A-Za-z0-9]', '-'
+
+    # No.4 の開始時点は、04-01 で作る「No.4 start」のコミットの時刻とする
+    $startText = "$(& git -C $root log -1 --format=%cI --grep='^No\.4 start$' 2>$null)".Trim()
+    $start = $null
+    if ($startText) {
+        $start = [DateTimeOffset]::Parse($startText, [Globalization.CultureInfo]::InvariantCulture)
+        Write-Host "会話の記録は、No.4 の開始（$($start.ToLocalTime().ToString('yyyy-MM-dd HH:mm'))）より後の部分だけを入れる"
+    } else {
+        Write-Host '「No.4 start」のコミットが見つからないので、会話の記録をすべて入れる' -ForegroundColor Yellow
+    }
+
+    function Get-LineTime($line) {
+        # 1行が1つのJSON。時刻（timestamp）が無い行は $null を返す
+        try { $j = $line | ConvertFrom-Json } catch { return $null }
+        $p = $j.PSObject.Properties['timestamp']
+        if (-not $p -or -not $p.Value) { return $null }
+        $v = $p.Value
+        if ($v -is [datetime]) {
+            # PowerShell 7 は日時の型に変えて返す
+            if ($v.Kind -eq [DateTimeKind]::Unspecified) { $v = [datetime]::SpecifyKind($v, [DateTimeKind]::Utc) }
+            return [DateTimeOffset]$v.ToUniversalTime()
+        }
+        return [DateTimeOffset]::Parse([string]$v, [Globalization.CultureInfo]::InvariantCulture)
+    }
+
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
     if (Test-Path $projects) {
         foreach ($d in Get-ChildItem -LiteralPath $projects -Directory -Force) {
             # 記録のフォルダ名は、作業フォルダのパスの英数字以外を「-」にしたもの（例：C--Users-yamada-EShop）。
             # EShop と、その下のフォルダ（backend など）で使った分だけを集める
-            if ($d.Name -ieq $encoded -or $d.Name.StartsWith("$encoded-", [StringComparison]::OrdinalIgnoreCase)) {
-                $sessions += Add-Tree $zip $d.FullName "claude-sessions/$($d.Name)"
+            if (-not ($d.Name -ieq $encoded -or $d.Name.StartsWith("$encoded-", [StringComparison]::OrdinalIgnoreCase))) { continue }
+            foreach ($f in Get-ChildItem -LiteralPath $d.FullName -Recurse -File -Force) {
+                $entry = "claude-sessions/$($d.Name)/" + $f.FullName.Substring($d.FullName.Length + 1).Replace('\', '/')
+                if (-not $start -or $f.Extension -ne '.jsonl') {
+                    if ($start -and $f.LastWriteTime -lt $start.LocalDateTime) { continue }
+                    [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $f.FullName, $entry)
+                    $sessions++
+                    continue
+                }
+                # 時刻のある行は No.4 の開始より後だけを残す。時刻の無い行（題名など）は、残す行があるファイルにだけ入れる
+                $kept = New-Object System.Collections.Generic.List[string]
+                $untimed = New-Object System.Collections.Generic.List[string]
+                foreach ($line in [IO.File]::ReadLines($f.FullName, $utf8)) {
+                    if (-not $line) { continue }
+                    $t = Get-LineTime $line
+                    if ($null -eq $t) { $untimed.Add($line) }
+                    elseif ($t -ge $start) { $kept.Add($line) }
+                }
+                if ($kept.Count -eq 0) { continue }
+                $w = New-Object System.IO.StreamWriter($zip.CreateEntry($entry).Open(), $utf8)
+                try { foreach ($line in @($untimed) + @($kept)) { $w.Write($line); $w.Write("`n") } }
+                finally { $w.Dispose() }
+                $sessions++
             }
         }
     }

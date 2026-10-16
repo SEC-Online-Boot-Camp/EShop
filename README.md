@@ -4,26 +4,7 @@ AI活用入門講座（SW編）で使用する、既存ECサイトを模したFa
 
 > **このブランチ（`coupon`）は、クーポン/割引適用機能を実装済みの状態です。**
 > No.1・No.2で使う開始状態（クーポン機能なし）は `main` ブランチにあります。
-> No.1・No.2で使ってきたフォルダのまま、次のように切り替えます。
-> 切り替えると `docs/基本設計書.md` は確定版になるので、先に No.2 までの変更をコミットし、`my-no2` という名前のブランチに残します。コミット済みなら `nothing to commit` と表示されますが、そのまま進めてかまいません。
->
-> ```powershell
-> git add docs\基本設計書.md docs\要件整理.md CLAUDE.md
-> git commit -m "No.2"
-> git branch my-no2
-> git reset origin/main
-> ```
->
-> `git reset` はコミットだけを取り消し、ファイルの中身は変えません。次に、1行目で `docs/基本設計書.md` を配布時の状態に戻し、`coupon` に切り替えます。01-01 の clone は `main` だけを取得しているため、2行目で `coupon` を取得の対象に加えます。
->
-> ```powershell
-> git restore docs\基本設計書.md
-> git remote set-branches --add origin coupon
-> git fetch origin
-> git switch coupon
-> ```
->
-> `CLAUDE.md`・`docs/要件整理.md`・`.env` への変更はそのまま残ります。`docs/基本設計書.md` は、レビューを経て確定した版になります（自分の設計は `my-no2` ブランチに残り、`git show my-no2:docs/基本設計書.md` で読めます）。
+> 切り替え方は、講座の手順書「03-01 試験準備」の手順1にあります。
 
 No.3では実装作業は行いません。この実装に対して**試験観点を洗い出し、テストコードを書き、
 見つかった不具合をデバッグする**のが課題です。
@@ -33,7 +14,7 @@ No.3では実装作業は行いません。この実装に対して**試験観�
 > 期待どおりに動くかを自分のテストで確かめてください。
 
 > **No.4（認定課題）は、開始用の`no4-start`ブランチに切り替えて、全員が同じ状態から始めます。**
-> 切り替え方は、No.4の手順書「04-01 設計課題」の「始める前に」にあります。データベースの作り直しは要りません。
+> 切り替え方は、No.4の手順書「04-01 設計課題」の「始める前に」にあります。
 
 ## 構成
 
@@ -49,21 +30,7 @@ CI と Claude による PR レビュー（`.github/`）は講座では使わな�
 
 ## セットアップ
 
-No.1で作った仮想環境をそのまま使います。作り直しやインストールのやり直しは不要です。
-データベースだけは作り直してください（`backend/` で実行）。
-
-```powershell
-cd backend
-.venv\Scripts\activate
-Remove-Item ecommerce.db -ErrorAction SilentlyContinue
-python -m app.seed
-pytest
-```
-
-`ecommerce.db`の削除は必須です。クーポン機能では`orders`テーブルに`coupon_code`・
-`discount_amount`の2列が増えますが、`seed`が使う`create_all()`は既存テーブルに列を追加しません。
-No.1で作ったDBをそのまま使うと、注文確定で`table orders has no column named coupon_code`という
-エラーになります。DBの中身はすべて`seed`で作り直せます。
+データベースの作り直しと、テストの基準線の確かめ方は、講座の手順書「03-01 試験準備」の手順2を参照してください。
 
 `python -m app.seed`はユーザー2件・商品5件・クーポン6件を投入します。
 `pytest` は既存テスト67件（結合テスト18件・単体テスト49件）がすべてPASSします。これが**回帰試験の基準線**です。

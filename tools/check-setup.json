@@ -2,7 +2,7 @@
   "about": "tools/check-setup.ps1 が読む、このブランチの期待値。受講者は編集しない",
   "branch": "no4-start",
   "stage": "No.4",
-  "switchStep": "04-01 の「始める前に」",
+  "switchStep": "04-01 の手順1",
   "changedCode": "keep",
   "requiredFiles": ["backend/app/coupon.py", "backend/tests/integration/test_coupon.py"],
   "requiredDocs": [],
@@ -14,7 +14,7 @@
   "expectedTests": 89,
   "expectedTestsByLevel": {"integration": 40, "unit": 49},
   "testFailFix": [
-    "04-01 の「始める前に」（切り替え）で、backend\\app と docs\\試験観点シート.md を戻してから切り替えたかを確かめる",
+    "04-01 の手順1（切り替え）の操作3で、git restore --source origin/no4-start … と git commit -m \"No.4 start\" まで行ったかを確かめる",
     "直らなければ講師に申し出る"
   ]
 }

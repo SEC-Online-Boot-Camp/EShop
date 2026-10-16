@@ -25,6 +25,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 # 提出に要るファイル（EShop のルートからの相対パス）
 $required = @(
+    'docs/要件整理-注文キャンセル.md',
     'docs/基本設計書.md',
     'docs/試験観点シート.md',
     'CLAUDE.md',

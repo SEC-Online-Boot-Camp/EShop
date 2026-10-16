@@ -10,7 +10,7 @@ AI活用入門講座（SW編）で使用する、既存ECサイトを模したFa
 > - クーポン機能の結合テスト（`backend/tests/integration/test_coupon.py`）
 > - No.3のデバッグレポート（`docs/デバッグレポート.md`）
 >
-> No.3で自分が作った試験観点シート・テスト・デバッグレポート・実装の修正は、切り替える前にコミットし、`my-no3`という名前のブランチに残します。切り替え方は、No.4の手順書「04-01 設計課題」の「始める前に」にあります。
+> 切り替え方は、No.4の手順書「04-01 設計課題」の「始める前に」にあります。
 
 ## 構成
 
@@ -26,24 +26,7 @@ CI と Claude による PR レビュー（`.github/`）は講座では使わな�
 
 ## セットアップ
 
-No.1で作った仮想環境をそのまま使います。作り直しやインストールのやり直しは不要です。
-データベースだけは作り直してください（`backend/` で実行）。
-
-```powershell
-cd backend
-.venv\Scripts\activate
-Remove-Item ecommerce.db -ErrorAction SilentlyContinue
-python -m app.seed
-pytest
-```
-
-`ecommerce.db`の削除は必須です。クーポン機能では`orders`テーブルに`coupon_code`・
-`discount_amount`の2列が増えますが、`seed`が使う`create_all()`は既存テーブルに列を追加しません。
-No.1で作ったDBをそのまま使うと、注文確定で`table orders has no column named coupon_code`という
-エラーになります。DBの中身はすべて`seed`で作り直せます。
-
-`python -m app.seed`はユーザー2件・商品5件・クーポン6件を投入します。
-`pytest` は89件がPASSし、1件がskippedになります（結合テスト40件・単体テスト49件。skippedは、期待結果が未決のCPN-22）。これがNo.4の**回帰試験の基準線**です。
+切り替え方と、テストの基準線の確かめ方は、講座の手順書「04-01 設計課題」の「始める前に」を参照してください。
 
 バックエンドの依存は `backend/pyproject.toml` と `backend/uv.lock` で固定しています。[uv](https://docs.astral.sh/uv/) を使う場合は、`backend/` で次を実行すると、`backend/.venv` に同じ環境ができます（pip を使う場合は、同じ版の `backend/requirements.txt` を使います）。
 

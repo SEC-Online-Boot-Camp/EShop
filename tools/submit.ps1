@@ -27,7 +27,6 @@ $required = @(
     'docs/問い合わせ記録.md',
     'docs/基本設計書.md',
     'docs/試験観点シート.md',
-    'docs/総合演習-プロンプト記録.md',
     'docs/総合演習-振り返り.md',
     'CLAUDE.md',
     'backend/tests/integration/test_order_cancel.py'

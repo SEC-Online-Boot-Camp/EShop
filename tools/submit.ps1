@@ -3,7 +3,7 @@
 
     EShop のフォルダを丸ごと（.git を含む）と、Claude Code の会話の記録（EShop で使った分のうち、
     04-01 の「No.4 start」のコミットより後の部分）を、
-    デスクトップの「提出_<氏名>_<日時>.zip」にまとめる。提出に要るファイルがあるかも確かめる。
+    デスクトップの「提出_<日時>.zip」にまとめる。提出に要るファイルがあるかも確かめる。
     読み取りだけで、EShop の中のファイルは変えない。ネットワークにはつながない（アップロードはしない）。
     作った zip は、受講者が提出先の自分のフォルダへ、ブラウザでアップロードする。
 
@@ -36,7 +36,7 @@ $skipDirs  = @('.venv', 'venv', '__pycache__', '.pytest_cache', 'node_modules', 
 $skipFiles = @('*.db', '*.pyc', '.coverage')
 
 # git は出力を UTF-8 で返すが、PowerShell は外部コマンドの出力を [Console]::OutputEncoding
-# （日本語の Windows では Shift-JIS）で読むため、日本語の氏名やパスが化ける。
+# （日本語の Windows では Shift-JIS）で読むため、日本語のパスが化ける。
 # git を呼ぶ間だけ UTF-8 にして、終わったら元に戻す。
 function Invoke-GitUtf8 {
     $prevOutEnc = [Console]::OutputEncoding
@@ -71,13 +71,10 @@ foreach ($r in $required) {
     }
 }
 
-# 3. zip の名前（氏名は 01-01 で設定した git の名前）
-$name = "$(Invoke-GitUtf8 -C $root config user.name)".Trim()
-if (-not $name) { $name = $env:USERNAME }
-foreach ($c in [IO.Path]::GetInvalidFileNameChars()) { $name = $name.Replace([string]$c, '_') }
+# 3. zip の名前（提出先の各自のフォルダに置くので、名前は入れない）
 $stamp = Get-Date -Format 'yyyyMMdd-HHmm'
 $desktop = [Environment]::GetFolderPath('Desktop')
-$zipPath = Join-Path $desktop "提出_${name}_${stamp}.zip"
+$zipPath = Join-Path $desktop "提出_${stamp}.zip"
 
 function Test-Skip([IO.FileSystemInfo]$item) {
     if ($item.PSIsContainer) { return $skipDirs -contains $item.Name }

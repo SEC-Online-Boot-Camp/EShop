@@ -3,7 +3,7 @@
 
     EShop のフォルダを丸ごと（.git を含む）と、Claude Code の会話の記録（EShop で使った分のうち、
     04-01 の「No.4 start」のコミットより後の部分）を、
-    デスクトップの「提出_<氏名>_<日時>.zip」にまとめる。提出に要るファイルがあるかも確かめる。
+    デスクトップの「提出_<日時>.zip」にまとめる。提出に要るファイルがあるかも確かめる。
     読み取りだけで、EShop の中のファイルは変えない。ネットワークにはつながない（アップロードはしない）。
     作った zip は、受講者が提出先の自分のフォルダへ、ブラウザでアップロードする。
 
@@ -35,8 +35,22 @@ $required = @(
 $skipDirs  = @('.venv', 'venv', '__pycache__', '.pytest_cache', 'node_modules', '.mutmut-cache', 'htmlcov')
 $skipFiles = @('*.db', '*.pyc', '.coverage')
 
+# git は出力を UTF-8 で返すが、PowerShell は外部コマンドの出力を [Console]::OutputEncoding
+# （日本語の Windows では Shift-JIS）で読むため、日本語のパスが化ける。
+# git を呼ぶ間だけ UTF-8 にして、終わったら元に戻す。
+function Invoke-GitUtf8 {
+    $prevOutEnc = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [Text.Encoding]::UTF8
+        & git @args 2>$null
+    }
+    finally {
+        [Console]::OutputEncoding = $prevOutEnc
+    }
+}
+
 # 1. EShop のルートを確かめる
-$root = "$(& git rev-parse --show-toplevel 2>$null)".Trim()
+$root = "$(Invoke-GitUtf8 rev-parse --show-toplevel)".Trim()
 if (-not $root -or -not (Test-Path (Join-Path $root 'backend'))) {
     Write-Host 'EShop のフォルダで実行してください（cd $HOME\EShop）。' -ForegroundColor Red
     return
@@ -57,13 +71,10 @@ foreach ($r in $required) {
     }
 }
 
-# 3. zip の名前（氏名は 01-01 で設定した git の名前）
-$name = "$(& git -C $root config user.name 2>$null)".Trim()
-if (-not $name) { $name = $env:USERNAME }
-foreach ($c in [IO.Path]::GetInvalidFileNameChars()) { $name = $name.Replace([string]$c, '_') }
+# 3. zip の名前（提出先の各自のフォルダに置くので、名前は入れない）
 $stamp = Get-Date -Format 'yyyyMMdd-HHmm'
 $desktop = [Environment]::GetFolderPath('Desktop')
-$zipPath = Join-Path $desktop "提出_${name}_${stamp}.zip"
+$zipPath = Join-Path $desktop "提出_${stamp}.zip"
 
 function Test-Skip([IO.FileSystemInfo]$item) {
     if ($item.PSIsContainer) { return $skipDirs -contains $item.Name }
@@ -86,8 +97,9 @@ function Add-Tree($zip, [string]$dir, [string]$prefix) {
     return $count
 }
 
-# 4. zip を作る
-$zip = [IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
+# 4. zip を作る（同じ名前の zip があれば、上書きする）
+if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+$zip =[IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
 try {
     $n = Add-Tree $zip $root 'EShop'
     Write-Host ''
@@ -100,7 +112,7 @@ try {
     $encoded = $root -replace '[^A-Za-z0-9]', '-'
 
     # No.4 の開始時点は、04-01 で作る「No.4 start」のコミットの時刻とする
-    $startText = "$(& git -C $root log -1 --format=%cI --grep='^No\.4 start$' 2>$null)".Trim()
+    $startText = "$(Invoke-GitUtf8 -C $root log -1 --format=%cI '--grep=^No\.4 start$')".Trim()
     $start = $null
     if ($startText) {
         $start = [DateTimeOffset]::Parse($startText, [Globalization.CultureInfo]::InvariantCulture)
@@ -137,24 +149,26 @@ try {
                     $sessions++
                     continue
                 }
-                # 時刻のある行は No.4 の開始より後だけを残す。時刻の無い行（題名など）は、残す行があるファイルにだけ入れる
+                # 時刻のある行のうち、No.4 の開始より後のものだけを残す。
+                # 時刻の無い行は入れない（過去の依頼文を含む行があり、開始より前の部分が混ざるため）
                 $kept = New-Object System.Collections.Generic.List[string]
-                $untimed = New-Object System.Collections.Generic.List[string]
                 foreach ($line in [IO.File]::ReadLines($f.FullName, $utf8)) {
                     if (-not $line) { continue }
                     $t = Get-LineTime $line
-                    if ($null -eq $t) { $untimed.Add($line) }
-                    elseif ($t -ge $start) { $kept.Add($line) }
+                    if ($null -ne $t -and $t -ge $start) { $kept.Add($line) }
                 }
                 if ($kept.Count -eq 0) { continue }
                 $w = New-Object System.IO.StreamWriter($zip.CreateEntry($entry).Open(), $utf8)
-                try { foreach ($line in @($untimed) + @($kept)) { $w.Write($line); $w.Write("`n") } }
+                try { foreach ($line in $kept) { $w.Write($line); $w.Write("`n") } }
                 finally { $w.Dispose() }
                 $sessions++
             }
         }
     }
     Write-Host "Claude Code の会話の記録: $sessions 件"
+    if ($sessions -eq 0) {
+        Write-Host '会話の記録が0件。EShop のフォルダを開いた VS Code で Claude Code を使ったか確かめる。（使っていないなら、このままでよい）' -ForegroundColor Yellow
+    }
 }
 finally {
     $zip.Dispose()

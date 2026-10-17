@@ -97,8 +97,9 @@ function Add-Tree($zip, [string]$dir, [string]$prefix) {
     return $count
 }
 
-# 4. zip を作る
-$zip = [IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
+# 4. zip を作る（同じ名前の zip があれば、上書きする）
+if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+$zip =[IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
 try {
     $n = Add-Tree $zip $root 'EShop'
     Write-Host ''
@@ -148,24 +149,26 @@ try {
                     $sessions++
                     continue
                 }
-                # 時刻のある行は No.4 の開始より後だけを残す。時刻の無い行（題名など）は、残す行があるファイルにだけ入れる
+                # 時刻のある行のうち、No.4 の開始より後のものだけを残す。
+                # 時刻の無い行は入れない（過去の依頼文を含む行があり、開始より前の部分が混ざるため）
                 $kept = New-Object System.Collections.Generic.List[string]
-                $untimed = New-Object System.Collections.Generic.List[string]
                 foreach ($line in [IO.File]::ReadLines($f.FullName, $utf8)) {
                     if (-not $line) { continue }
                     $t = Get-LineTime $line
-                    if ($null -eq $t) { $untimed.Add($line) }
-                    elseif ($t -ge $start) { $kept.Add($line) }
+                    if ($null -ne $t -and $t -ge $start) { $kept.Add($line) }
                 }
                 if ($kept.Count -eq 0) { continue }
                 $w = New-Object System.IO.StreamWriter($zip.CreateEntry($entry).Open(), $utf8)
-                try { foreach ($line in @($untimed) + @($kept)) { $w.Write($line); $w.Write("`n") } }
+                try { foreach ($line in $kept) { $w.Write($line); $w.Write("`n") } }
                 finally { $w.Dispose() }
                 $sessions++
             }
         }
     }
     Write-Host "Claude Code の会話の記録: $sessions 件"
+    if ($sessions -eq 0) {
+        Write-Host '会話の記録が0件。EShop のフォルダを開いた VS Code で Claude Code を使ったか確かめる。（使っていないなら、このままでよい）' -ForegroundColor Yellow
+    }
 }
 finally {
     $zip.Dispose()

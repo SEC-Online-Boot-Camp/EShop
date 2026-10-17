@@ -3,7 +3,7 @@
 
     EShop のフォルダを丸ごと（.git を含む）と、Claude Code の会話の記録（EShop で使った分のうち、
     04-01 の「No.4 start」のコミットより後の部分）を、
-    デスクトップの「提出_<日時>.zip」にまとめる。提出に要るファイルがあるかも確かめる。
+    デスクトップの「<日時>.zip」にまとめる。提出に要るファイルがあるかも確かめる。
     読み取りだけで、EShop の中のファイルは変えない。ネットワークにはつながない（アップロードはしない）。
     作った zip は、受講者が提出先の自分のフォルダへ、ブラウザでアップロードする。
 
@@ -74,7 +74,7 @@ foreach ($r in $required) {
 # 3. zip の名前（提出先の各自のフォルダに置くので、名前は入れない）
 $stamp = Get-Date -Format 'yyyyMMdd-HHmm'
 $desktop = [Environment]::GetFolderPath('Desktop')
-$zipPath = Join-Path $desktop "提出_${stamp}.zip"
+$zipPath = Join-Path $desktop "${stamp}.zip"
 
 function Test-Skip([IO.FileSystemInfo]$item) {
     if ($item.PSIsContainer) { return $skipDirs -contains $item.Name }

@@ -35,8 +35,22 @@ $required = @(
 $skipDirs  = @('.venv', 'venv', '__pycache__', '.pytest_cache', 'node_modules', '.mutmut-cache', 'htmlcov')
 $skipFiles = @('*.db', '*.pyc', '.coverage')
 
+# git は出力を UTF-8 で返すが、PowerShell は外部コマンドの出力を [Console]::OutputEncoding
+# （日本語の Windows では Shift-JIS）で読むため、日本語の氏名やパスが化ける。
+# git を呼ぶ間だけ UTF-8 にして、終わったら元に戻す。
+function Invoke-GitUtf8 {
+    $prevOutEnc = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [Text.Encoding]::UTF8
+        & git @args 2>$null
+    }
+    finally {
+        [Console]::OutputEncoding = $prevOutEnc
+    }
+}
+
 # 1. EShop のルートを確かめる
-$root = "$(& git rev-parse --show-toplevel 2>$null)".Trim()
+$root = "$(Invoke-GitUtf8 rev-parse --show-toplevel)".Trim()
 if (-not $root -or -not (Test-Path (Join-Path $root 'backend'))) {
     Write-Host 'EShop のフォルダで実行してください（cd $HOME\EShop）。' -ForegroundColor Red
     return
@@ -58,7 +72,7 @@ foreach ($r in $required) {
 }
 
 # 3. zip の名前（氏名は 01-01 で設定した git の名前）
-$name = "$(& git -C $root config user.name 2>$null)".Trim()
+$name = "$(Invoke-GitUtf8 -C $root config user.name)".Trim()
 if (-not $name) { $name = $env:USERNAME }
 foreach ($c in [IO.Path]::GetInvalidFileNameChars()) { $name = $name.Replace([string]$c, '_') }
 $stamp = Get-Date -Format 'yyyyMMdd-HHmm'
@@ -100,7 +114,7 @@ try {
     $encoded = $root -replace '[^A-Za-z0-9]', '-'
 
     # No.4 の開始時点は、04-01 で作る「No.4 start」のコミットの時刻とする
-    $startText = "$(& git -C $root log -1 --format=%cI --grep='^No\.4 start$' 2>$null)".Trim()
+    $startText = "$(Invoke-GitUtf8 -C $root log -1 --format=%cI '--grep=^No\.4 start$')".Trim()
     $start = $null
     if ($startText) {
         $start = [DateTimeOffset]::Parse($startText, [Globalization.CultureInfo]::InvariantCulture)

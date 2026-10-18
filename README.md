@@ -1,0 +1,119 @@
+# rehearsal ブランチ（講師専用）
+
+AI活用入門講座 SW編の**事前リハーサル**で使うものを置いてある。**受講者はこのブランチに切り替えない。** 講座当日に受講者のPCで詰まったときの診断は、このブランチではなく`main`・`coupon`の`tools/check-setup.ps1`で行う（[講座当日の診断](#講座当日の診断受講者のpc)）。
+
+`main`・`coupon`とは履歴を共有しない独立したブランチで、**アプリのコードは入っていない**。受講者が`git clone`したときに、このブランチの内容が作業ツリーへ展開されないようにするためである。
+
+> **このブランチは公開リポジトリにあり、受講者からも参照できる。** 普通の`git clone`はすべてのブランチをリモート追跡ブランチとして取得するため、`git show origin/rehearsal:precheck.ps1`で中身を読める。**受講者に伏せたい情報（演習の答え・仕込んだ欠陥の件数など）はここに書かない。** 期待するテスト件数（54件・55件）は、どちらも配布ブランチ（`main`・`coupon`）の`tools/check-setup.ps1`に書かれており、55件は受講者向けの手順書 03-01 にも書かれているので差し支えない。
+
+## 中身
+
+| ファイル                              | 用途                                                                       |
+| :------------------------------------ | :------------------------------------------------------------------------- |
+| `precheck.ps1`                        | 事前確認書 第I部（実機確認）を1ステップずつ進める対話型ランナー |
+| `check-publish.py`                    | push前の検査。公開してはいけない情報が混ざっていないかと、事前確認書との対応を見る |
+
+**リハーサル用のダミー成果物（要件整理メモ・基本設計書の追記分）はこのブランチに置かず、講師が別途渡す。** 渡された`docs-template`フォルダを置いたフォルダ（`docs-template`の親）を、4-4-01で使うために`-MaterialDir`に指定する。4-4-01では要件整理メモをリハーサル機の`EShop/docs/`へコピーし、基本設計書は配布時から入っている既存機能の設計書の末尾に追記する（受講者もNo.2でこの設計書に追記するため）。No.3の手順書（03-01〜03-03）がNo.2の成果物を参照する前提で書かれているため、リハーサルではこれで代用する。**解答例は講師専用資料なので、この経路では使わない。**
+
+## 使い方
+
+リハーサル機で次を実行する。受講者が使う`main`・`coupon`は取得されない。講師が別途渡す`docs-template`フォルダは`$base`の直下に置いておく。
+
+```powershell
+$base = "C:\rehearsal-$(Get-Date -Format 'yyyyMMdd')"
+New-Item -ItemType Directory -Force $base | Out-Null
+Set-Location $base
+git clone -b rehearsal --single-branch https://github.com/SEC-Online-Boot-Camp/EShop.git EShop-rehearsal
+Set-Location EShop-rehearsal
+.\precheck.ps1 -MaterialDir $base -DryRun   # 下見（何も実行しない）
+.\precheck.ps1 -MaterialDir $base           # 実環境リハーサル
+```
+
+`-MaterialDir`には`docs-template`そのものではなく、その親フォルダを渡す。下の表の呼び方でも同じように付ける。
+
+止まるのは人が操作・判断するところだけで、機械が判定できるステップは確認を求めずに流す。**自動で流したステップの判定がNGになったときは、その場で止まる。**
+
+| 呼び方 | 用途 | 項目数 | 止まる箇所 |
+| :-- | :-- | --: | --: |
+| `.\precheck.ps1` | 実環境リハーサル（貸与機） | 46 | 17 |
+| `.\precheck.ps1 -Chapter 5` | 社内で確定させる5章の挙動確認 | 11 | 10 |
+| `.\precheck.ps1 -Auto` | 講師の下ごしらえ・再実行 | 46 | 0 |
+
+**5章（5-1〜5-11）は`-Chapter 5`と書いたときだけ対象になる。** 社内で先に潰しておく前提で、貸与機では測れないため既定から外してある。
+
+**VS Codeの統合ターミナルから起動する。** 2-2-dで記録するのは起動したシェルの版で、受講者は01-01の最初から最後までVS Codeのターミナルで操作する。素のPowerShellから起動すると3章の結果が受講者の環境を表さない。
+
+`.ps1`の実行が実行ポリシーで禁止されている場合の起動方法は`precheck.ps1`の冒頭に書いてある。
+
+## 置き場所
+
+**作業フォルダ（EShopのclone先）と記録の出力先は、既定で「このリポジトリを置いたフォルダの親」になる。** 置き場にしたいフォルダを作ってその中へcloneすれば、**リハーサルが終わったらフォルダごと1回で片付く**。`-WorkDir`・`-OutDir`に同じ値を渡す必要はない。
+
+```text
+C:\work\                  ← 置き場（手で作る。名前は何でもよい）
+├── EShop-rehearsal\      ← このリポジトリのクローン
+├── docs-template\        ← 講師が別途渡すダミー成果物（-MaterialDir C:\work で指定する）
+├── EShop\                ← 4-3-05 でcloneする作業ツリー
+├── precheck-result-<日時>.md
+├── precheck-steps-<日時>.md
+└── rehearsal-check.txt
+```
+
+- **`EShop`の中には置かない。** 入れ子のリポジトリになり、7-1の`git status`の判定がぶれる
+- 次のどれかに当たる場合は`C:\rehearsal-<日付>`を作ってそこを使う（作れない機材では`%USERPROFILE%\rehearsal-<日付>`）。置き場が意図しない場所に決まるのを防ぐため
+  - ドライブ直下にcloneした（親が`C:\`になる）
+  - 親がOneDrive配下。`.venv`と`.git`が同期対象になると**6章の所要時間の実測が当てにならなくなり**、記録の方も機材から消してクラウド側に残る
+  - 実行ポリシー対策の起動で、カレントがこのリポジトリの置き場ではない
+- **前日に用意しておいても置き場は割れない。** このスクリプトを`rehearsal-<日付>`の中に直に置いた場合は、実行日ではなくそのフォルダを使う
+- `-WorkDir`・`-OutDir`で明示することもできる（OneDrive配下を指した場合は起動時に警告が出る）
+
+## 講座当日の診断（受講者のPC）
+
+**このブランチには診断は無い。** 講座当日に受講者の環境で詰まったときは、配布ブランチ（`main`・`coupon`）に入っている`tools/check-setup.ps1`を使う。**正本は`main`・`coupon`の`tools/check-setup.ps1`**で、項目や使い方はそちらが正しい。受講者の作業ツリーに入っているので、`git fetch`や`git archive`で取り出す手順は要らない。
+
+受講者のEShopのルートで、VS Codeのターミナルから実行してもらう。
+
+```powershell
+.\tools\check-setup.ps1
+```
+
+実行ポリシーで弾かれる場合は1行目を、それも弾かれる場合は2行目を実行してもらう。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\check-setup.ps1
+& ([scriptblock]::Create((Get-Content .\tools\check-setup.ps1 -Raw)))
+```
+
+| 引数 | 用途 |
+| :-- | :-- |
+| `-SkipTest` | pytestを実行しない |
+| `-OutDir <path>` | 記録の出力先。既定はEShopの親フォルダ |
+| `-EShopDir <path>` | 診断するEShopを指定する |
+
+- **読み取りのみ。** 記録は`eshop-diagnose-<日時>.md`に出る
+- プロキシ設定や外部ホストへの疎通確認（旧`-Network`）は持たない
+
+## 保守
+
+**このブランチが正本で、ここを直接直す。**
+
+`precheck.ps1`のステップ番号・期待値は、**教材リポジトリにある`事前確認書.md`（第I部）と対になっている**。どちらかを直したら、もう一方も合わせること。事前確認書はこのブランチに無いので、ステップ番号や期待値を変えたら教材リポジトリ側にも知らせる。
+
+- ステップ番号は同書の節番号と揃えてある（`3-2-1`・`4-3-05`・`7-2-b`など）
+- 期待値の出どころ: 同書 4-3（`main` 54件）・4-4（`coupon` 55件）・5章
+- 記録の「スクリプトの版」は実行時にgitから読む。cloneから実行したときは`precheck.ps1`を最後に変えたコミット（短縮ハッシュと日付）、`git archive`などで取り出して履歴の無い場所から実行したときは`blob <短縮ID>`になる。後者は、このブランチのcloneで`git log --all --find-object=<短縮ID>`を実行するとどのコミットの版かが分かる。起動方法3（スクリプトブロック）でカレントが置き場でないときは、版は不明になる
+
+**pushする前に`check-publish.py`を通す。** このブランチは公開リポジトリにあり、受講者も中身を読めるため。
+
+```powershell
+python check-publish.py --doc <事前確認書.md のパス>
+```
+
+- 公開の検査: `precheck.ps1`・`README.md`・`check-publish.py`自身に、仕込んだ欠陥の件数・IPアドレス・PACのURL・社内のホスト名とドメイン・利用者名を含むローカルパスが無いかを見る
+- 整合の検査: `New-Step`のステップIDが、事前確認書の章・節と対応しているかを見る。事前確認書は教材リポジトリにあるので、`--doc`でパスを渡したときだけ行う
+- 配布ブランチの検査: `origin/main`・`origin/coupon`の`tools/check-setup.ps1`と、`origin/main`の`tools/check-setup.json`（診断の期待値）を`git show`で読み、公開の検査に加えて、hookの作り方（演習の答え）になる語も見る。受講者の作業ツリーに入り、Claude Codeも読むため。`tools/check-setup.ps1`は両方にあれば同じ内容か（blobが一致するか）も見る。`tools/check-setup.json`はブランチごとに中身が違ってよいので、一致は見ない。refかファイルが無ければ「省略:」と出して先へ進む。fetchはしないので、手元のリモート追跡ブランチの状態を見る
+- `main`の検査: `origin/main`の`tools/check-setup.ps1`・`tools/check-setup.json`と、`main`と同じ内容に保つ`origin/coupon`の`tools/check-setup.ps1`に、couponの実装の手がかりになる語が無いかを見る。`main`はNo.2で受講者が`coupon`の機能を自分で設計するときの作業ツリーで、Claude Codeも読むため。refかファイルが無ければ「省略:」と出して先へ進む
+- `--file <path>`（複数回指定可）: 任意のファイルを、配布ブランチのファイルと同じ基準で検査する。`tools/check-setup.ps1`を`main`・`coupon`へ入れるPRをマージする前に、作業ツリーのファイルを確かめるのに使う
+- `--main-file <path>`（複数回指定可）: 任意のファイルを、`main`のファイルと同じ基準（`--file`の基準に加えて、couponの実装の手がかりになる語）で検査する。PRをマージする前に、作業ツリーの`tools/check-setup.ps1`と`main`向けの`tools/check-setup.json`を確かめるのに使う
+
+**講座当日の診断の項目は`main`・`coupon`の`tools/check-setup.ps1`にある。** 受講者向けの手順書（01-01〜03-02）の手順番号や件数（54件・55件）を変えたら、そちらを直す（`main`と`coupon`は同じ内容に保つ）。

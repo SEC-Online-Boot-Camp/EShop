@@ -1,0 +1,20 @@
+{
+  "about": "tools/check-setup.ps1 が読む、このブランチの期待値。受講者は編集しない",
+  "branch": "no4-start",
+  "stage": "No.4",
+  "switchStep": "04-01 の手順1",
+  "changedCode": "keep",
+  "requiredFiles": ["backend/app/coupon.py", "backend/tests/integration/test_coupon.py"],
+  "requiredDocs": [],
+  "requiredTables": ["users", "products", "cart_items", "carts", "coupons", "orders", "order_items"],
+  "requiredColumns": {
+    "orders": ["coupon_code", "discount_amount"]
+  },
+  "seedStep": "03-01 手順2",
+  "expectedTests": 87,
+  "expectedTestsByLevel": {"integration": 38, "unit": 49},
+  "testFailFix": [
+    "04-01 の手順1（切り替え）の操作3で、git restore --source origin/no4-start … と git commit -m \"No.4 start\" まで行ったかを確かめる",
+    "直らなければ講師に申し出る"
+  ]
+}

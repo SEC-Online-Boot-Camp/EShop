@@ -1,0 +1,138 @@
+# EShop（no4-start ブランチ：No.4 の開始状態）
+
+AI活用入門講座（SW編）で使用する、既存ECサイトを模したFastAPIアプリケーションです。
+
+> **このブランチ（`no4-start`）は、No.4を全員が同じ状態から始めるためのものです。**
+> `coupon`ブランチ（No.3）に、次の4つを入れてあります。
+>
+> - クーポン機能の不具合の修正（`backend/app/coupon.py`）
+> - クーポン機能の試験観点（`docs/試験観点シート.md`の9章と、回帰として直した行）
+> - クーポン機能の結合テスト（`backend/tests/integration/test_coupon.py`）
+> - No.3のデバッグレポート（`docs/デバッグレポート.md`）
+>
+> 切り替え方は、講座の手順書の指示に従ってください。
+
+## 構成
+
+| パス | 内容 |
+| :--- | :--- |
+| `backend/` | FastAPI のバックエンド（API・テスト） |
+| `frontend/` | React + TypeScript + Vite の画面（クーポンの適用・解除を含む）。詳細は [frontend/README.md](frontend/README.md) |
+| `docs/` | クーポン機能を追記した確定版の基本設計書（[docs/基本設計書.md](docs/基本設計書.md)）と、既存機能の結合テストの試験観点シート（[docs/試験観点シート.md](docs/試験観点シート.md)）、No.2 の入力の要望メモ（[docs/要望メモ.md](docs/要望メモ.md)） |
+| `tools/` | 講座当日の診断スクリプト（`check-setup.ps1`）と、診断の期待値（`check-setup.json`） |
+| `.vscode/` | VS Code のテストパネルで、backend の pytest を `backend/` から動かす設定 |
+
+CI と Claude による PR レビュー（`.github/`）は講座では使わないため、`github-config` ブランチに残しています。
+
+## セットアップ
+
+切り替え方と、テストの基準線の確かめ方は、講座の手順書の指示に従ってください。
+
+バックエンドの依存は `backend/pyproject.toml` と `backend/uv.lock` で固定しています。[uv](https://docs.astral.sh/uv/) を使う場合は、`backend/` で次を実行すると、`backend/.venv` に同じ環境ができます（pip を使う場合は、同じ版の `backend/requirements.txt` を使います）。
+
+```powershell
+cd backend
+uv sync
+```
+
+画面も使う場合は、バックエンドを起動したうえで別のターミナルで次を実行し、<http://localhost:5173> を開きます
+（Node.js 24 以降が必要）。
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+テストは `backend/` で実行する。`backend/tests/` には、API を外から呼ぶ結合テスト（`tests/integration/`、18件）と、
+開発者が書いた関数単位の単体テスト（`tests/unit/`、49件）がある。単体テストは開発者が書いたもので、受講者は変更しない。
+
+```bash
+pytest                     # すべて（67件）
+pytest tests/integration   # 結合テストだけ（18件）
+pytest tests/unit          # 単体テストだけ（49件）
+```
+
+カバレッジを確認したい場合は、`backend/` で以下を実行する。
+
+```bash
+pytest --cov=app --cov-report=term-missing
+```
+
+HTML形式のレポートも生成できる（`htmlcov/index.html` をブラウザで開く）。
+
+```bash
+pytest --cov=app --cov-report=html
+```
+
+既存テストがどこまで保証していてどこからが未検証か（ミューテーションテストの結果を含む）は [backend/TESTING.md](backend/TESTING.md) を参照。
+
+> TESTING.mdに載っているカバレッジ・ミューテーションテストの数値は、いずれも**クーポン機能を追加する前**の
+> 既存コードに対する実測値です。このブランチには、クーポン機能の結合テスト（`tests/integration/test_coupon.py`）が入っています（`tests/unit/` にある単体テストは開発者が書いたもので、受講者は変更しません）。
+> TESTING.mdが言う「未検証の外側」がクーポン部分そのものであり、No.3の課題で埋めた部分です。
+
+## API一覧
+
+| メソッド | エンドポイント | 概要                                     | 認証 |
+| :------- | :------------- | :--------------------------------------- | :--- |
+| GET      | /              | ヘルスチェック                           | 不要 |
+| POST     | /auth/login    | ログイン（JWT取得）                      | 不要 |
+| GET      | /products      | 商品一覧取得                             | 不要 |
+| POST     | /cart/items    | カートに商品追加                         | 要   |
+| GET      | /cart          | カート内容・小計・割引後金額取得         | 要   |
+| POST     | /cart/coupon   | クーポン適用（プレビュー。消費はしない） | 要   |
+| DELETE   | /cart/coupon   | 適用中のクーポンを取り消す               | 要   |
+| POST     | /orders        | 注文確定（クーポンの再検証・消費を含む） | 要   |
+
+既存機能とクーポン機能の詳しい仕様（業務ルール・権限・データモデル・エラーなど）は [docs/基本設計書.md](docs/基本設計書.md) を参照。
+
+## クーポン機能の実装内容
+
+`backend/app/coupon.py` に適用可否の判定と割引額の計算をまとめ、`backend/app/routers/cart.py`（プレビュー）と
+`backend/app/routers/orders.py`（確定）の双方から呼び出しています。
+
+| 仕様                   | 実装場所                                           |
+| :--------------------- | :------------------------------------------------- |
+| 定率引き／定額引き     | `backend/app/coupon.py` `calc_discount()`          |
+| 割引の計算対象金額     | `backend/app/coupon.py` `calc_eligible_subtotal()` |
+| 有効期限・発行数上限   | `backend/app/coupon.py` `evaluate()`               |
+| 発行数の消費（原子的） | `backend/app/coupon.py` `consume()`                |
+| プレビュー             | `backend/app/routers/cart.py` `apply_coupon()`     |
+| 確定時の再検証・消費   | `backend/app/routers/orders.py` `checkout()`       |
+
+### 投入済みのクーポン（`python -m app.seed`）
+
+| コード    | 種別       | 値      | 割引上限 | 最低購入金額 | 対象外カテゴリ | 発行数上限  | 状態     |
+| :-------- | :--------- | :------ | :------- | :----------- | :------------- | :---------- | :------- |
+| SPRING10  | percentage | 10%     | 1,000円  | 3,000円      | なし           | 100         | 有効     |
+| FLAT500   | fixed      | 500円   | —        | 3,000円      | なし           | 100         | 有効     |
+| WELCOME5  | percentage | 5%      | —        | 0円          | なし           | **なし**    | 有効     |
+| NOACC15   | percentage | 15%     | —        | 3,000円      | accessories    | 100         | 有効     |
+| SOLDOUT   | fixed      | 1,000円 | —        | 0円          | なし           | 1（消化済） | 上限到達 |
+| EXPIRED20 | percentage | 20%     | —        | 0円          | なし           | 100         | 期限切れ |
+
+## テストで使えるフィクスチャ
+
+`backend/tests/conftest.py` に、クーポンのテストで使うフィクスチャを用意しています。
+
+| フィクスチャ                             | 内容                                                       |
+| :--------------------------------------- | :--------------------------------------------------------- |
+| `client` / `auth_headers` / `db_session` | 既存。APIクライアント・認証ヘッダ・DBセッション            |
+| `sample_product`                         | 既存。単価1,000円・`is_sale=False` の商品                  |
+| `cart_with_items`                        | `sample_product` を4点入れた小計4,000円のカート            |
+| `sale_product`                           | 単価2,000円・`is_sale=True` の商品                         |
+| `sample_coupon`                          | SPRING10相当（定率10%・上限1,000円・最低購入3,000円）      |
+| `fixed_coupon`                           | FLAT500相当（定額500円・最低購入3,000円）                  |
+| `unlimited_coupon`                       | WELCOME5相当（定率5%・発行数上限なし）                     |
+| `exhausted_coupon`                       | SOLDOUT相当（発行数上限に到達済み）                        |
+| `expired_coupon`                         | EXPIRED20相当（有効期限切れ）                              |
+| `make_product` / `make_coupon`           | 任意の商品・クーポンを作るファクトリ（境界値の作り込み用） |
+
+`make_coupon` / `make_product` は境界値テストのデータを自分で組み立てるためのものです。
+既製のフィクスチャで足りない条件（端数が出る金額など）は、これらで作ってください。
+
+## セキュリティ演習について（No.1）
+
+`backend/.env` には、研修用にあえて用意した**架空の**機密情報（DB接続文字列・JWT秘密鍵・決済ゲートウェイAPIキー）が
+含まれています。実在するシステムの値ではありませんが、「このままAIに貼り付けてよいか」を考える教材として
+使ってください。本来この種のファイルはリポジトリにコミットすべきではない、という点自体も演習の対象です。

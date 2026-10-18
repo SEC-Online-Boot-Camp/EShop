@@ -1,0 +1,13 @@
+/* Markdown のプレビュー用。試験観点シートのように列の多い表を読みやすくする */
+
+/* 表の中の長いコード（テスト名・項目名）を途中で折り返す */
+table code {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+/* 列が1文字の幅まで縮まないようにする */
+table th,
+table td {
+  min-width: 4em;
+}

@@ -365,9 +365,14 @@ function Set-CheckList {
         param($text)
         if ($text -match 'Python\s+3\.(\d+)') {
             $minor = [int]$Matches[1]
-            if ($minor -ge 11) { Write-Mark 'OK' "3.$minor（3.11以上）"; return 'OK' }
-            Write-Mark 'NG' "3.$minor。3.11以上が要る"
-            Write-Fix '3.11以上のPythonを入れる必要がある。講師に申し出る'
+            if ($minor -ge 11 -and $minor -le 14) { Write-Mark 'OK' "3.$minor（3.11〜3.14）"; return 'OK' }
+            if ($minor -ge 15) {
+                Write-Mark 'NG' "3.$minor。3.15以上では、講座で使うライブラリの一部がまだ入らない"
+                Write-Fix 'Python 3.14を、python.orgのWindows用インストーラで入れ直す。講師に申し出る'
+                return 'NG'
+            }
+            Write-Mark 'NG' "3.$minor。3.11〜3.14が要る"
+            Write-Fix '3.11〜3.14のPythonを入れる必要がある。講師に申し出る'
             return 'NG'
         }
         if ($text -match 'WindowsApps') { Write-Mark 'NG' 'Microsoft Store の案内用のpython（中身が無い）しか見つからない' }

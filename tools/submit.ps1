@@ -28,9 +28,10 @@ $required = @(
     'docs/要件整理-注文キャンセル.md',
     'docs/基本設計書.md',
     'docs/試験観点シート.md',
-    'CLAUDE.md',
-    'backend/tests/integration/test_order_cancel.py'
+    'CLAUDE.md'
 )
+# No.4 で作るテスト（04-04 の指定の名前）。別の名前で作っていても、配布の版に無いテストのファイルがあれば、それを出す
+$expectedTest = 'backend/tests/integration/test_order_cancel.py'
 # zip に入れないフォルダ（名前で判定する）とファイル（パターン）
 $skipDirs  = @('.venv', 'venv', '__pycache__', '.pytest_cache', 'node_modules', '.mutmut-cache', 'htmlcov')
 $skipFiles = @('*.db', '*.pyc', '.coverage')
@@ -68,6 +69,33 @@ foreach ($r in $required) {
     } else {
         Write-Host "  なし  $r" -ForegroundColor Yellow
         $missing += $r
+    }
+}
+
+# No.4 で足したテストのファイル：backend/tests の下の test_*.py のうち、配布の版（04-01 で取得した
+# origin/no4-start、無ければ「No.4 start」のコミット）に無いもの。名前を決め打ちしない
+# 参照があるかを先に確かめる（無い参照を ls-tree に渡すと git が標準エラーに書き、PowerShell 5.1 では止まることがある）
+$baseRef = "$(Invoke-GitUtf8 -C $root rev-parse --verify --quiet 'refs/remotes/origin/no4-start')".Trim()
+if (-not $baseRef) { $baseRef = "$(Invoke-GitUtf8 -C $root log -1 --format=%H '--grep=^No\.4 start$')".Trim() }
+$baseFiles = if ($baseRef) { @(Invoke-GitUtf8 -C $root ls-tree -r --name-only $baseRef -- backend/tests) } else { @() }
+$testsDir = Join-Path $root 'backend\tests'
+$newTests = @()
+if ($baseFiles.Count -gt 0 -and (Test-Path -LiteralPath $testsDir)) {
+    $newTests = @(Get-ChildItem -LiteralPath $testsDir -Recurse -File -Filter 'test_*.py' |
+        Where-Object { $_.FullName -notmatch '\\__pycache__\\' } |
+        ForEach-Object { $_.FullName.Substring($root.Length + 1).Replace('\', '/') } |
+        Where-Object { $baseFiles -notcontains $_ } | Sort-Object)
+} elseif (Test-Path -LiteralPath (Join-Path $root ($expectedTest -replace '/', '\'))) {
+    # 配布の版が見つからないときは、指定の名前だけを見る
+    $newTests = @($expectedTest)
+}
+if ($newTests.Count -eq 0) {
+    Write-Host "  なし  $expectedTest（No.4 で作るテスト）" -ForegroundColor Yellow
+    $missing += $expectedTest
+} else {
+    foreach ($t in $newTests) { Write-Host "  あり  $t（No.4 で足したテスト）" }
+    if ($newTests -notcontains $expectedTest) {
+        Write-Host "  テストのファイルの名前が、指定（$expectedTest）と違う。このまま提出してよい" -ForegroundColor Yellow
     }
 }
 

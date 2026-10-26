@@ -626,7 +626,7 @@ function Set-CheckList {
         return $r
     }
 
-    New-Check -Id 'D2-3' -Group 'リポジトリ' -Title '.env（値は表示しない）' -Ref '01-04 手順3' -Cmd {
+    New-Check -Id 'D2-3' -Group 'リポジトリ' -Title '.env（値は表示しない）' -Ref '01-04 手順5' -Cmd {
         $f = Join-Path $script:Dx.Src '.env'
         if (-not (Test-Path $f)) { 'backendの.env => 無い'; return }
         $keys = @()
@@ -654,12 +654,12 @@ function Set-CheckList {
         }
         if ($text -match 'DATABASE_URL => (値が空|sqlite:/// 以外)') {
             Write-Mark 'NG' 'DATABASE_URL が配布時の形でない。サーバーの起動と pytest が失敗する'
-            Write-Fix '01-04 手順3: DATABASE_URL はプレースホルダーにしない。DATABASE_URL=sqlite:///./ecommerce.db に戻す'
+            Write-Fix '01-04 手順5: DATABASE_URL はプレースホルダーにしない。DATABASE_URL=sqlite:///./ecommerce.db に戻す'
             return 'NG'
         }
         if ($text -match 'DATABASE_URL => 行が無い') {
             Write-Mark '注意' 'DATABASE_URL の行が無い（アプリは既定の sqlite:///./ecommerce.db で動く）'
-            Write-Fix '01-04 手順3: DATABASE_URL の行は置き換えずに残す'
+            Write-Fix '01-04 手順5: DATABASE_URL の行は置き換えずに残す'
             return '注意'
         }
         Write-Mark 'OK' 'DATABASE_URL は配布時の形のまま'

@@ -18,7 +18,7 @@ AI活用入門講座（SW編）で使用する、既存ECサイトを模したFa
 | :--- | :--- |
 | `backend/` | FastAPI のバックエンド（API・テスト） |
 | `frontend/` | React + TypeScript + Vite の画面（クーポンの適用・解除を含む）。詳細は [frontend/README.md](frontend/README.md) |
-| `docs/` | クーポン機能を追記した確定版の基本設計書（[docs/基本設計書.md](docs/基本設計書.md)）と、既存機能の結合テストの試験観点シート（[docs/試験観点シート.md](docs/試験観点シート.md)）、No.2 の入力の要望メモ（[docs/要望メモ.md](docs/要望メモ.md)） |
+| `docs/` | クーポン機能を追記した確定版の基本設計書（[docs/基本設計書.md](docs/基本設計書.md)）と、既存機能の結合テストの試験観点シート（[docs/試験観点シート.md](docs/試験観点シート.md)）、No.2 の入力の要望メモ（[docs/要望メモ.md](docs/要望メモ.md)）と、その背景を聞き取ったヒアリング結果（[docs/ヒアリング結果.md](docs/ヒアリング結果.md)） |
 | `tools/` | 講座当日の診断スクリプト（`check-setup.ps1`）と、診断の期待値（`check-setup.json`） |
 | `.vscode/` | VS Code のテストパネルで、backend の pytest を `backend/` から動かす設定 |
 

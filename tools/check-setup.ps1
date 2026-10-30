@@ -392,7 +392,7 @@ function Set-CheckList {
         return 'NG'
     }
 
-    New-Check -Id 'D1-3' -Group '道具' -Title 'Claude Code（CLI）' -Ref '01-02 手順2' -Cmd {
+    New-Check -Id 'D1-3' -Group '道具' -Title 'Claude Code（CLI）' -Ref '01-02 手順1' -Cmd {
         $bin = Join-Path $env:USERPROFILE '.local\bin'
         # 実行ファイルを先に探す。npm 版の claude.ps1 を拾うと、実行ポリシーが Restricted の PC では
         # 版を取るところで弾かれ、「PATH に無い」と誤って判定するため
@@ -414,7 +414,7 @@ function Set-CheckList {
         if ($text -match '版\s+=>\s*\S*\d+\.\d+') {
             if ($text -match 'claude => .*\\\.local\\bin\\' -and $text -match 'User PATH への登録 => なし') {
                 Write-Mark '注意' 'このターミナルでは使えるが、User PATH に登録されていない。開き直すと見つからなくなる'
-                Write-Fix '01-02 手順2 の「claude の置き場を PATH に追加する」コマンドを実行する'
+                Write-Fix '01-02 手順1 の「claude の置き場を PATH に追加する」コマンドを実行する'
                 return '注意'
             }
             Write-Mark 'OK' '使える'
@@ -422,10 +422,10 @@ function Set-CheckList {
         }
         if ($text -match '実体\s+=> .*claude\.exe') {
             Write-Mark 'NG' 'インストールはされているが、このターミナルから見つからない'
-            Write-Fix '01-02 手順2 の「claude の置き場を PATH に追加する」コマンドを最後の行まで実行する'
+            Write-Fix '01-02 手順1 の「claude の置き場を PATH に追加する」コマンドを最後の行まで実行する'
         } else {
             Write-Mark 'NG' 'インストールされていない'
-            Write-Fix '01-02 手順2 のインストールからやり直す。エラーが出たら講師に申し出る'
+            Write-Fix '01-02 手順1 のインストールからやり直す。エラーが出たら講師に申し出る'
         }
         return 'NG'
     }
@@ -445,7 +445,7 @@ function Set-CheckList {
             return '未確認'
         }
         Write-Mark 'NG' '拡張が入っていない'
-        Write-Fix '01-02 手順3: 拡張機能ビューで「Claude Code for VS Code」をインストールし、Sign in する'
+        Write-Fix '01-02 手順3: 拡張機能ビューで「Claude Code for VS Code」をインストールする（ログインは 01-02 手順2 で済ませたものを使う）'
         return 'NG'
     }
 
@@ -643,7 +643,7 @@ function Set-CheckList {
                 elseif (-not $db) { '値が空' }
                 else { 'sqlite:/// 以外に書き換えられている' }
         "DATABASE_URL => $form"
-        $changed = @(Invoke-DxGit diff --name-only HEAD '--' backend/.env | Where-Object { $_ })
+        $changed = @(Invoke-DxGit diff --name-only $script:Dx.Base '--' backend/.env | Where-Object { $_ })
         "配布時からの変更 => $(if ($changed.Count -gt 0) { 'あり（01-04 の抽象化）' } else { 'なし' })"
     } -Hint {
         param($text)

@@ -355,7 +355,7 @@ function Set-CheckList {
 
     # ====================== 道具 ======================
 
-    New-Check -Id 'D1-1' -Group '道具' -Title 'Python' -Ref '01-01 前提条件・手順2' -Cmd {
+    New-Check -Id 'D1-1' -Group '道具' -Title 'Python' -Ref '01-02 手順2' -Cmd {
         $all = @(Get-Command python -All -ErrorAction SilentlyContinue | ForEach-Object { $_.Source })
         if ($all.Count -eq 0) { 'python => このターミナルから見つからない'; return }
         $all | ForEach-Object { "python => $_" }
@@ -381,7 +381,7 @@ function Set-CheckList {
         return 'NG'
     }
 
-    New-Check -Id 'D1-2' -Group '道具' -Title 'Git' -Ref '01-01 前提条件' -Cmd {
+    New-Check -Id 'D1-2' -Group '道具' -Title 'Git' -Ref '事前の準備' -Cmd {
         $v = try { git --version 2>&1 | ForEach-Object { "$_" } } catch { $null }
         if ($v) { $v } else { 'gitが見つからない' }
     } -Hint {
@@ -392,7 +392,7 @@ function Set-CheckList {
         return 'NG'
     }
 
-    New-Check -Id 'D1-3' -Group '道具' -Title 'Claude Code（CLI）' -Ref '01-02 手順1' -Cmd {
+    New-Check -Id 'D1-3' -Group '道具' -Title 'Claude Code（CLI）' -Ref '01-01 手順1' -Cmd {
         $bin = Join-Path $env:USERPROFILE '.local\bin'
         # 実行ファイルを先に探す。npm 版の claude.ps1 を拾うと、実行ポリシーが Restricted の PC では
         # 版を取るところで弾かれ、「PATH に無い」と誤って判定するため
@@ -414,7 +414,7 @@ function Set-CheckList {
         if ($text -match '版\s+=>\s*\S*\d+\.\d+') {
             if ($text -match 'claude => .*\\\.local\\bin\\' -and $text -match 'User PATH への登録 => なし') {
                 Write-Mark '注意' 'このターミナルでは使えるが、User PATH に登録されていない。開き直すと見つからなくなる'
-                Write-Fix '01-02 手順1 の「claude の置き場を PATH に追加する」コマンドを実行する'
+                Write-Fix '01-01 手順1 の「claude の置き場を PATH に追加する」コマンドを実行する'
                 return '注意'
             }
             Write-Mark 'OK' '使える'
@@ -422,15 +422,15 @@ function Set-CheckList {
         }
         if ($text -match '実体\s+=> .*claude\.exe') {
             Write-Mark 'NG' 'インストールはされているが、このターミナルから見つからない'
-            Write-Fix '01-02 手順1 の「claude の置き場を PATH に追加する」コマンドを最後の行まで実行する'
+            Write-Fix '01-01 手順1 の「claude の置き場を PATH に追加する」コマンドを最後の行まで実行する'
         } else {
             Write-Mark 'NG' 'インストールされていない'
-            Write-Fix '01-02 手順1 のインストールからやり直す。エラーが出たら講師に申し出る'
+            Write-Fix '01-01 手順1 のインストールからやり直す。エラーが出たら講師に申し出る'
         }
         return 'NG'
     }
 
-    New-Check -Id 'D1-4' -Group '道具' -Title 'VS Code拡張（Claude Code for VS Code）' -Ref '01-02 手順3' -Cmd {
+    New-Check -Id 'D1-4' -Group '道具' -Title 'VS Code拡張（Claude Code for VS Code）' -Ref '01-01 手順3' -Cmd {
         $code = Get-Command code -ErrorAction SilentlyContinue | Select-Object -First 1
         if (-not $code) { 'code => 見つからない（拡張の一覧を取れない）'; return }
         $raw = @(& code --list-extensions --show-versions 2>&1 | ForEach-Object { "$_" })
@@ -445,11 +445,11 @@ function Set-CheckList {
             return '未確認'
         }
         Write-Mark 'NG' '拡張が入っていない'
-        Write-Fix '01-02 手順3: 拡張機能ビューで「Claude Code for VS Code」をインストールする（ログインは 01-02 手順2 で済ませたものを使う）'
+        Write-Fix '01-01 手順3: 拡張機能ビューで「Claude Code for VS Code」をインストールする（ログインは 01-01 手順2 で済ませたものを使う）'
         return 'NG'
     }
 
-    New-Check -Id 'D1-5' -Group '道具' -Title '実行ポリシー（activate が使えるか）' -Ref '01-01 手順2' -Cmd {
+    New-Check -Id 'D1-5' -Group '道具' -Title '実行ポリシー（activate が使えるか）' -Ref '01-02 手順2' -Cmd {
         $list = try { @(Get-ExecutionPolicy -List -ErrorAction Stop) } catch { @() }
         if ($list.Count -eq 0) {
             # PowerShell 7 から 5.1 を起動した場合など、モジュールを読めずに Get-ExecutionPolicy が
@@ -481,17 +481,17 @@ function Set-CheckList {
         if ($text -match '取得できない') { Write-Mark '未確認' '実行ポリシーを取得できない'; return '未確認' }
         if ($text -match '(?m)^\s*(MachinePolicy|UserPolicy)\s+(?!Undefined)\S+') {
             Write-Mark '注意' '会社のポリシーで制限されている。activate はエラーになる'
-            Write-Fix '01-01 手順2 の代替の1行（$env:VIRTUAL_ENV=...）で有効にする。ターミナルを開き直すたびに必要'
+            Write-Fix '01-02 手順2 の代替の1行（$env:VIRTUAL_ENV=...）で有効にする。ターミナルを開き直すたびに必要'
         } else {
             Write-Mark '注意' 'このままでは activate がエラーになる'
-            Write-Fix '01-01 手順2 の Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser を実行してから activate する'
+            Write-Fix '01-02 手順2 の Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser を実行してから activate する'
         }
         return '注意'
     }
 
     # ====================== リポジトリ ======================
 
-    New-Check -Id 'D2-1' -Group 'リポジトリ' -Title 'EShop の場所と clone 元' -Ref '01-01 手順1' -Cmd {
+    New-Check -Id 'D2-1' -Group 'リポジトリ' -Title 'EShop の場所と clone 元' -Ref '01-02 手順1' -Cmd {
         "EShop    => $($script:Dx.Repo)"
         "カレント => $((Get-Location).Path)"
         "clone元  => $(@(Invoke-DxGit remote get-url origin) -join ' ')"
@@ -500,7 +500,7 @@ function Set-CheckList {
         $r = 'OK'
         if ($text -notmatch '(?i)SEC-Online-Boot-Camp/EShop') {
             Write-Mark '注意' 'clone元が講座のリポジトリになっていない'
-            Write-Fix '01-01 手順1 のURLで clone したフォルダかを講師と確かめる'
+            Write-Fix '01-02 手順1 のURLで clone したフォルダかを講師と確かめる'
             $r = '注意'
         }
         if ($script:Dx.Repo -match '(?i)OneDrive') {
@@ -668,7 +668,7 @@ function Set-CheckList {
 
     # ====================== Python環境 ======================
 
-    New-Check -Id 'D3-1' -Group 'Python環境' -Title '仮想環境（backend\.venv）' -Ref '01-01 手順2' -Cmd {
+    New-Check -Id 'D3-1' -Group 'Python環境' -Title '仮想環境（backend\.venv）' -Ref '01-02 手順2' -Cmd {
         $py = Join-Path $script:Dx.Src '.venv\Scripts\python.exe'
         "backendの.venv => $(if (Test-Path $py) { 'あり' } else { '無い' })"
         if (Test-Path $py) {
@@ -685,7 +685,7 @@ function Set-CheckList {
         param($text)
         if ($text -match 'backendの\.venv => 無い') {
             Write-Mark 'NG' 'backend に仮想環境が無い'
-            Write-Fix '01-01 手順2: backend で python -m venv .venv を実行し、有効化して pip install -r requirements.txt'
+            Write-Fix '01-02 手順2: backend で python -m venv .venv を実行し、有効化して pip install -r requirements.txt'
             if ($text -match 'EShop直下の\.venv => あり') {
                 Write-Host '        EShop 直下に .venv がある。backend へ移動する前に作ったもので、使わない' -ForegroundColor Yellow
             }
@@ -693,7 +693,7 @@ function Set-CheckList {
         }
         if ($text -notmatch '版\s+=> Python 3') {
             Write-Mark 'NG' '仮想環境の python が起動しない（作成元の Python が消えた・動かされた など）'
-            Write-Fix 'backend で Remove-Item -Recurse -Force .venv を実行し、01-01 手順2 の仮想環境の作成からやり直す'
+            Write-Fix 'backend で Remove-Item -Recurse -Force .venv を実行し、01-02 手順2 の仮想環境の作成からやり直す'
             return 'NG'
         }
         if ($text -match 'EShop直下の\.venv => あり') {
@@ -705,7 +705,7 @@ function Set-CheckList {
         return 'OK'
     }
 
-    New-Check -Id 'D3-2' -Group 'Python環境' -Title 'このターミナルでの有効化' -Ref '01-01 手順2' -Cmd {
+    New-Check -Id 'D3-2' -Group 'Python環境' -Title 'このターミナルでの有効化' -Ref '01-02 手順2' -Cmd {
         "VIRTUAL_ENV => $(if ($env:VIRTUAL_ENV) { $env:VIRTUAL_ENV } else { '（未設定＝有効になっていない）' })"
         foreach ($c in 'python', 'pip', 'pytest', 'uvicorn') {
             $s = (Get-Command $c -ErrorAction SilentlyContinue | Select-Object -First 1).Source
@@ -716,7 +716,7 @@ function Set-CheckList {
         $venv = [System.IO.Path]::GetFullPath((Join-Path $script:Dx.Src '.venv')).TrimEnd('\')
         if (-not $env:VIRTUAL_ENV) {
             Write-Mark '注意' 'このターミナルでは仮想環境が有効になっていない'
-            Write-Fix '01-01 手順2: backend で .venv\Scripts\activate（実行許可エラーになるPCは代替の1行）。ターミナルを開き直したら毎回必要'
+            Write-Fix '01-02 手順2: backend で .venv\Scripts\activate（実行許可エラーになるPCは代替の1行）。ターミナルを開き直したら毎回必要'
             return '注意'
         }
         $now = try { [System.IO.Path]::GetFullPath($env:VIRTUAL_ENV).TrimEnd('\') } catch { $env:VIRTUAL_ENV }
@@ -737,7 +737,7 @@ function Set-CheckList {
         return 'OK'
     }
 
-    New-Check -Id 'D3-3' -Group 'Python環境' -Title '依存パッケージ（requirements.txt との一致）' -Ref '01-01 手順2' -Cmd {
+    New-Check -Id 'D3-3' -Group 'Python環境' -Title '依存パッケージ（requirements.txt との一致）' -Ref '01-02 手順2' -Cmd {
         $py = Get-DxPython
         if (-not $py) { '仮想環境が無いため確認しない'; return }
         # requirements.txt の「名前==版」を、仮想環境に入っている版と突き合わせる（pip は使わない）
@@ -768,7 +768,7 @@ print("mismatch: %d" % bad)
             $n = [int]$Matches[1]
             if ($n -eq 0) { Write-Mark 'OK' 'requirements.txt の版がすべて入っている'; return 'OK' }
             Write-Mark 'NG' "requirements.txt と違う・入っていないパッケージが $n 件ある（上の NG の行）"
-            Write-Fix '01-01 手順2: 仮想環境を有効にして、backend で pip install -r requirements.txt。エラーが出たら講師に見せる'
+            Write-Fix '01-02 手順2: 仮想環境を有効にして、backend で pip install -r requirements.txt。エラーが出たら講師に見せる'
             return 'NG'
         }
         Write-Mark 'NG' '確認用のスクリプトが動かなかった（上の出力を講師に見せる）'
@@ -777,7 +777,7 @@ print("mismatch: %d" % bad)
 
     # ====================== データベース ======================
 
-    New-Check -Id 'D4-1' -Group 'データベース' -Title '初期データ（backend\ecommerce.db）' -Ref '01-01 手順3・03-01 手順2' -Cmd {
+    New-Check -Id 'D4-1' -Group 'データベース' -Title '初期データ（backend\ecommerce.db）' -Ref '01-02 手順3・03-01 手順2' -Cmd {
         $py = Get-DxPython
         if (-not $py) { $py = (Get-Command python -ErrorAction SilentlyContinue | Select-Object -First 1).Source }
         if (-not $py) { 'python が無いため確認しない'; return }
@@ -830,7 +830,7 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
         param($text)
         $ex = $script:Dx.Expect
         # seed の手順はブランチで違うので期待値から引く。読めなければ両方を挙げる
-        $seed = if ($ex.Error) { '01-01 手順3・03-01 手順2 のうち、いまの段階のもの' } else { $ex.SeedStep }
+        $seed = if ($ex.Error) { '01-02 手順3・03-01 手順2 のうち、いまの段階のもの' } else { $ex.SeedStep }
         if ($text -match 'python が無い') { Write-Mark '未確認' 'python が無い（D1-1）'; return '未確認' }
         if ($text -match 'EShop直下の ecommerce\.db => あり') {
             Write-Mark '参考' 'EShop 直下にも ecommerce.db がある。backend 以外で seed を実行したもので、使われない'
@@ -881,7 +881,7 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
 
     # ====================== サーバー ======================
 
-    New-Check -Id 'D5-1' -Group 'サーバー' -Title '8000番とSwagger UI' -Ref '01-01 手順3' -Cmd {
+    New-Check -Id 'D5-1' -Group 'サーバー' -Title '8000番とSwagger UI' -Ref '01-02 手順3' -Cmd {
         # サーバーは起動しない。起動中なら応答を見る（プロキシを通さずに 127.0.0.1 へ直接）
         $pids = @()
         # 実行ポリシーが Restricted の PowerShell 7 では、NetTCPIP モジュールを読み込めずに例外になる。
@@ -908,7 +908,7 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
         param($text)
         if ($text -match '使われていない') {
             Write-Mark 'OK' '8000番は空いている（サーバーは起動していない）'
-            Write-Host '        起動するときは 01-01 手順3: backend で uvicorn app.main:app --reload' -ForegroundColor DarkGray
+            Write-Host '        起動するときは 01-02 手順3: backend で uvicorn app.main:app --reload' -ForegroundColor DarkGray
             return 'OK'
         }
         if ($text -match '使用中: (?!python)\S' -and $text -notmatch '使用中: python') {
@@ -935,7 +935,7 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
     # ====================== テスト ======================
 
     if (-not $SkipTest) {
-        New-Check -Id 'D6-1' -Group 'テスト' -Title '配布されたテスト（pytest）' -Ref '01-01 手順3・03-01 手順2' -Cmd {
+        New-Check -Id 'D6-1' -Group 'テスト' -Title '配布されたテスト（pytest）' -Ref '01-02 手順3・03-01 手順2' -Cmd {
             $py = Get-DxPython
             if (-not $py) { '仮想環境が無いため実行しない'; return }
             # 実行するのは配布されたテストだけ。自分で作ったテストは演習の途中では失敗してよいので、
@@ -1018,7 +1018,7 @@ main(sys.argv[1], split(sys.argv[2]), split(sys.argv[3]))
             $errors = if ($text -match '(\d+) errors?\b') { [int]$Matches[1] } else { 0 }
             if ($text -match "No module named '?(\w+)") {
                 Write-Mark 'NG' "パッケージ（$($Matches[1])）が入っていないため、テストを読み込めない"
-                Write-Fix '01-01 手順2: 仮想環境を有効にして、backend で pip install -r requirements.txt'
+                Write-Fix '01-02 手順2: 仮想環境を有効にして、backend で pip install -r requirements.txt'
                 return 'NG'
             }
             if ($passed + $failed -eq 0) {
@@ -1123,7 +1123,7 @@ function Invoke-Diagnose {
         Write-Mark 'NG' 'EShop のフォルダが見つからない'
         Write-Host "        カレント: $((Get-Location).Path)" -ForegroundColor DarkGray
         Write-Host '        VS Code で EShop フォルダを開いたターミナルで実行するか、-EShopDir で場所を指定する' -ForegroundColor Yellow
-        Write-Host '        まだ clone していないなら、01-01 手順1 からやり直す' -ForegroundColor Yellow
+        Write-Host '        まだ clone していないなら、01-02 手順1 からやり直す' -ForegroundColor Yellow
         return
     }
     $script:Dx = @{ Repo = $repo; Src = (Join-Path $repo 'backend') }

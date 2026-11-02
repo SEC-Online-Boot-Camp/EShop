@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import CartItem, Product, User
-from app.schemas import CartItemCreate, CartItemOut, CartOut
+from app.schemas import CartItemCreate, CartItemOut, CartOut, CouponApplyRequest
 
 router = APIRouter(prefix="/cart", tags=["cart"])
 
@@ -52,6 +52,29 @@ def get_cart(
     return _build_cart_out(db, current_user)
 
 
+# クーポンの適用・解除は、画面（frontend）が呼ぶ入口だけを用意してある。中身はまだ無い。
+COUPON_NOT_IMPLEMENTED = "クーポン機能はまだ実装されていません"
+
+
+@router.post("/coupon")
+def apply_coupon(
+    payload: CouponApplyRequest,
+    current_user: User = Depends(get_current_user),
+):
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=COUPON_NOT_IMPLEMENTED
+    )
+
+
+@router.delete("/coupon")
+def remove_coupon(
+    current_user: User = Depends(get_current_user),
+):
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=COUPON_NOT_IMPLEMENTED
+    )
+
+
 def _build_cart_out(db: Session, user: User) -> CartOut:
     cart_items = db.query(CartItem).filter(CartItem.user_id == user.id).all()
     items = [
@@ -64,4 +87,4 @@ def _build_cart_out(db: Session, user: User) -> CartOut:
         for item in cart_items
     ]
     subtotal = sum(item.unit_price * item.quantity for item in items)
-    return CartOut(items=items, subtotal=subtotal)
+    return CartOut(items=items, subtotal=subtotal, total=subtotal)

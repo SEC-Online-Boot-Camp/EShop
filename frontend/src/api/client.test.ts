@@ -7,7 +7,7 @@ describe('api client', () => {
   it('トークンを Authorization ヘッダーに付けて送る', async () => {
     const fetchMock = mockFetch({
       'GET /api/cart': () => ({
-        body: { items: [], subtotal: 0 },
+        body: { items: [], subtotal: 0, applied_coupon_code: null, discount_amount: 0, total: 0 },
       }),
     })
 
@@ -19,18 +19,15 @@ describe('api client', () => {
 
   it('detail が文字列のエラーはそのままメッセージにする', async () => {
     mockFetch({
-      'POST /api/auth/login': () => ({
-        status: 401,
-        body: { detail: 'メールアドレスまたはパスワードが正しくありません' },
+      'POST /api/cart/coupon': () => ({
+        status: 404,
+        body: { detail: 'クーポンが見つかりません' },
       }),
     })
 
-    const err = await api.login('taro@example.com', 'wrong').catch((e: unknown) => e)
+    const err = await api.applyCoupon('t', 'NOPE').catch((e: unknown) => e)
     expect(err).toBeInstanceOf(ApiError)
-    expect(err).toMatchObject({
-      status: 401,
-      message: 'メールアドレスまたはパスワードが正しくありません',
-    })
+    expect(err).toMatchObject({ status: 404, message: 'クーポンが見つかりません' })
   })
 
   it('入力検証エラー（detail が配列）は msg をつないでメッセージにする', async () => {

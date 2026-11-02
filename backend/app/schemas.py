@@ -38,6 +38,15 @@ class CartItemOut(BaseModel):
 class CartOut(BaseModel):
     items: list[CartItemOut]
     subtotal: int
+    # クーポン機能の項目。画面（frontend）が受け取る形だけを先に用意してある。
+    # クーポン機能はまだ無いので、適用中のクーポンは無く、割引は0で、支払い金額は小計と同じ。
+    applied_coupon_code: str | None = None
+    discount_amount: int = 0
+    total: int = 0
+
+
+class CouponApplyRequest(BaseModel):
+    coupon_code: str
 
 
 class OrderItemOut(BaseModel):
@@ -53,5 +62,8 @@ class OrderOut(BaseModel):
     id: int
     status: str
     subtotal: int
+    # クーポン機能の項目（CartOutと同じく、画面が受け取る形だけを先に用意してある）
+    coupon_code: str | None = None
+    discount_amount: int = 0
     items: list[OrderItemOut]
     created_at: datetime

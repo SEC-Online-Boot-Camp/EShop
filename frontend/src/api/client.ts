@@ -1,4 +1,10 @@
-import type { Cart, Order, Product, TokenResponse } from './types'
+import type {
+  Cart,
+  CouponApplyResult,
+  Order,
+  Product,
+  TokenResponse,
+} from './types'
 
 // vite.config.ts のプロキシで /api をバックエンドに転送している
 const BASE_URL = '/api'
@@ -64,6 +70,21 @@ export const api = {
       body: { product_id: productId, quantity },
     }),
 
-  checkout: (token: string) =>
-    request<Order>('/orders', { method: 'POST', token }),
+  applyCoupon: (token: string, couponCode: string) =>
+    request<CouponApplyResult>('/cart/coupon', {
+      method: 'POST',
+      token,
+      body: { coupon_code: couponCode },
+    }),
+
+  removeCoupon: (token: string) =>
+    request<Cart>('/cart/coupon', { method: 'DELETE', token }),
+
+  // expectedTotal: 画面に表示した支払金額。確定時に金額が変わっていれば 422 になる
+  checkout: (token: string, expectedTotal: number) =>
+    request<Order>('/orders', {
+      method: 'POST',
+      token,
+      body: { expected_total: expectedTotal },
+    }),
 }

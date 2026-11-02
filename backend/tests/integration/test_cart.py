@@ -71,7 +71,13 @@ class TestGetCart:
         response = client.get("/cart", headers=auth_headers)
 
         assert response.status_code == 200
-        assert response.json() == {"items": [], "subtotal": 0}
+        assert response.json() == {
+            "items": [],
+            "subtotal": 0,
+            "applied_coupon_code": None,
+            "discount_amount": 0,
+            "total": 0,
+        }
 
 
 class TestCartUserIsolation:
@@ -87,4 +93,10 @@ class TestCartUserIsolation:
         response = client.get("/cart", headers=auth_headers)
 
         assert response.status_code == 200
-        assert response.json() == {"items": [], "subtotal": 0}
+        assert response.json() == {
+            "items": [],
+            "subtotal": 0,
+            "applied_coupon_code": None,
+            "discount_amount": 0,
+            "total": 0,
+        }

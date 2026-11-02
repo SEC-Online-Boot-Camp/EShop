@@ -7,7 +7,7 @@
   "requiredDocs": [],
   "requiredTables": ["users", "products", "cart_items", "orders", "order_items"],
   "requiredColumns": {},
-  "seedStep": "01-01 手順3",
+  "seedStep": "01-02 手順3",
   "expectedTests": 54,
   "expectedTestsByLevel": {"integration": 18, "unit": 36}
 }

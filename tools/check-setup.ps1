@@ -541,7 +541,7 @@ function Set-CheckList {
         # 自分の設計を写したファイル（基本設計書_<氏名>.md）。これも表示だけ
         $own = @(Get-ChildItem (Join-Path $script:Dx.Repo 'docs') -Filter '基本設計書_*.md' -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
         "基本設計書_*.md => $(if ($own.Count -gt 0) { $own -join ', ' } else { '無い' })"
-        "要望メモ.md   => $(if (Test-Path (Join-Path $script:Dx.Repo 'docs\要望メモ.md')) { 'あり' } else { '無い' })"
+        "事業部の要望.md => $(if (Test-Path (Join-Path $script:Dx.Repo 'docs\事業部の要望.md')) { 'あり' } else { '無い' })"
         "要件整理.md   => $(if (Test-Path (Join-Path $script:Dx.Repo 'docs\要件整理.md')) { 'あり' } else { '無い' })"
         # この段階で要るファイル（期待値の requiredFiles）。名前は期待値から引き、本文には書かない
         $ex = $script:Dx.Expect

@@ -26,7 +26,7 @@ CI と Claude による PR レビュー（`.github/`）は講座では使わな�
 
 ## セットアップ
 
-切り替え方と、テストの基準線の確かめ方は、講座の手順書の指示に従ってください。
+切り替え方と、開始時点のテスト結果の確かめ方は、講座の手順書の指示に従ってください。
 
 バックエンドの依存は `backend/pyproject.toml` と `backend/uv.lock` で固定しています。[uv](https://docs.astral.sh/uv/) を使う場合は、`backend/` で次を実行すると、`backend/.venv` に同じ環境ができます（pip を使う場合は、同じ版の `backend/requirements.txt` を使います）。
 

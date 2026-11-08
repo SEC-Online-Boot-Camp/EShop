@@ -22,13 +22,7 @@
         2) 「このシステムではスクリプトの実行が無効になっている」と出る場合
            powershell -ExecutionPolicy Bypass -File .\tools\check-setup.ps1
 
-        3) 2でも同じエラーになる場合（グループポリシーで縛られているPC）
-           & ([scriptblock]::Create((Get-Content .\tools\check-setup.ps1 -Raw)))
-
-           実行ポリシーが禁じているのはスクリプトファイル（.ps1）の実行だけなので、
-           中身を文字列として読み込んで実行するこの形は管理者権限なしで通る。
-           引数を渡す場合は末尾に足す:
-           & ([scriptblock]::Create((Get-Content .\tools\check-setup.ps1 -Raw))) -SkipTest
+        2でも同じエラーになる場合は、講師に申し出る。
 
     出力されるファイル
 

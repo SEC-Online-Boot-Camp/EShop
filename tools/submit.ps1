@@ -15,8 +15,7 @@
         2) 「このシステムではスクリプトの実行が無効になっている」と出る場合
            powershell -ExecutionPolicy Bypass -File .\tools\submit.ps1
 
-        3) 2でも同じエラーになる場合（グループポリシーで縛られているPC）
-           & ([scriptblock]::Create((Get-Content .\tools\submit.ps1 -Raw -Encoding UTF8)))
+        2でも同じエラーになる場合は、講師に申し出る。
 #>
 
 $ErrorActionPreference = 'Stop'

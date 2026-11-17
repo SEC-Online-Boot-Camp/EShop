@@ -4,6 +4,7 @@
     EShop のフォルダを丸ごと（.git を含む）と、Claude Code の会話の記録（EShop で使った分のうち、
     04-01 の「No.4 start」のコミットより後の部分）を、
     デスクトップの「<日時>.zip」にまとめる。提出に要るファイルがあるかも確かめる。
+    コミットしていない変更（追跡していない新しいファイルを含む）があれば、zip を作らずに止める。
     読み取りだけで、EShop の中のファイルは変えない。ネットワークにはつながない（アップロードはしない）。
     作った zip は、受講者が提出先の自分のフォルダへ、ブラウザでアップロードする。
 
@@ -59,7 +60,24 @@ if (-not $root -or -not (Test-Path (Join-Path $root 'backend'))) {
 $root = (Resolve-Path $root).Path
 Write-Host "EShop: $root"
 
-# 2. 提出に要るファイルを確かめる
+# 2. コミットしていない変更が無いかを確かめる（追跡していない新しいファイルも含める）。
+# あれば zip を作らずに止める。コミットはスクリプトではせず、受講者が行う
+$dirty = @(Invoke-GitUtf8 -C $root -c core.quotepath=false status --porcelain --untracked-files=all)
+if ($LASTEXITCODE -ne 0) {
+    Write-Host 'git status が失敗した。zip は作っていない。講師に申し出てください。' -ForegroundColor Red
+    return
+}
+if ($dirty.Count -gt 0) {
+    Write-Host ''
+    Write-Host "コミットしていない変更が $($dirty.Count) 件ある。zip は作っていない。" -ForegroundColor Red
+    foreach ($l in ($dirty | Select-Object -First 10)) { Write-Host "  $l" -ForegroundColor Red }
+    if ($dirty.Count -gt 10) { Write-Host "  …ほか $($dirty.Count - 10) 件" -ForegroundColor Red }
+    Write-Host '04-05 の手順1のコミット（すべての変更をステージして、メッセージを No.4 にしてコミット）をしてから、もう一度実行してください。' -ForegroundColor Red
+    return
+}
+Write-Host 'コミットしていない変更は無い。'
+
+# 3. 提出に要るファイルを確かめる
 Write-Host ''
 Write-Host '--- 提出に要るファイル ---'
 $missing = @()
@@ -72,12 +90,15 @@ foreach ($r in $required) {
     }
 }
 
-# No.4 で足したテストのファイル：backend/tests の下の test_*.py のうち、配布の版（04-01 で取得した
-# origin/no4-start、無ければ「No.4 start」のコミット）に無いもの。名前を決め打ちしない
+# No.4 で足したテストのファイル：backend/tests の下の test_*.py のうち、No.4 の開始時点に無かったもの。
+# 開始時点は、配布の版（04-01 で取得した origin/no4-start）と「No.4 start」のコミットの両方とする。
+# No.3 で自分で作ったテスト（配布の版に無い名前のもの）は「No.4 start」のコミットに残るので、これで除ける。名前を決め打ちしない
 # 参照があるかを先に確かめる（無い参照を ls-tree に渡すと git が標準エラーに書き、PowerShell 5.1 では止まることがある）
-$baseRef = "$(Invoke-GitUtf8 -C $root rev-parse --verify --quiet 'refs/remotes/origin/no4-start')".Trim()
-if (-not $baseRef) { $baseRef = "$(Invoke-GitUtf8 -C $root log -1 --format=%H '--grep=^No\.4 start$')".Trim() }
-$baseFiles = if ($baseRef) { @(Invoke-GitUtf8 -C $root ls-tree -r --name-only $baseRef -- backend/tests) } else { @() }
+$baseRefs = @(
+    "$(Invoke-GitUtf8 -C $root rev-parse --verify --quiet 'refs/remotes/origin/no4-start')".Trim(),
+    "$(Invoke-GitUtf8 -C $root log -1 --format=%H '--grep=^No\.4 start$')".Trim()
+) | Where-Object { $_ }
+$baseFiles = @($baseRefs | ForEach-Object { Invoke-GitUtf8 -C $root ls-tree -r --name-only $_ -- backend/tests } | Sort-Object -Unique)
 $testsDir = Join-Path $root 'backend\tests'
 $newTests = @()
 if ($baseFiles.Count -gt 0 -and (Test-Path -LiteralPath $testsDir)) {
@@ -99,7 +120,7 @@ if ($newTests.Count -eq 0) {
     }
 }
 
-# 3. zip の名前（提出先の各自のフォルダに置くので、名前は入れない）
+# 4. zip の名前（提出先の各自のフォルダに置くので、名前は入れない）
 $stamp = Get-Date -Format 'yyyyMMdd-HHmm'
 $desktop = [Environment]::GetFolderPath('Desktop')
 $zipPath = Join-Path $desktop "${stamp}.zip"
@@ -125,7 +146,7 @@ function Add-Tree($zip, [string]$dir, [string]$prefix) {
     return $count
 }
 
-# 4. zip を作る（同じ名前の zip があれば、上書きする）
+# 5. zip を作る（同じ名前の zip があれば、上書きする）
 if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
 $zip =[IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
 try {
@@ -202,7 +223,7 @@ finally {
     $zip.Dispose()
 }
 
-# 5. 結果
+# 6. 結果
 $size = [math]::Round((Get-Item -LiteralPath $zipPath).Length / 1MB, 1)
 Write-Host ''
 Write-Host "作成した: $zipPath（$size MB）" -ForegroundColor Green

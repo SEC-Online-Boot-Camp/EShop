@@ -2,7 +2,7 @@
     総合演習（No.4）の提出物を、1つのzipにまとめる
 
     EShop のフォルダを丸ごと（.git を含む）と、Claude Code の会話の記録（EShop で使った分のうち、
-    04-01 の「No.4 start」のコミットより後の部分）を、
+    04-01 の「No.4 開始」のコミットより後の部分）を、
     デスクトップの「<日時>.zip」にまとめる。提出に要るファイルがあるかも確かめる。
     コミットしていない変更（追跡していない新しいファイルを含む）があれば、zip を作らずに止める。
     読み取りだけで、EShop の中のファイルは変えない。ネットワークにはつながない（アップロードはしない）。
@@ -91,12 +91,12 @@ foreach ($r in $required) {
 }
 
 # No.4 で足したテストのファイル：backend/tests の下の test_*.py のうち、No.4 の開始時点に無かったもの。
-# 開始時点は、配布の版（04-01 で取得した origin/no4-start）と「No.4 start」のコミットの両方とする。
-# No.3 で自分で作ったテスト（配布の版に無い名前のもの）は「No.4 start」のコミットに残るので、これで除ける。名前を決め打ちしない
+# 開始時点は、配布の版（04-01 で取得した origin/no4-start）と「No.4 開始」のコミットの両方とする。
+# No.3 で自分で作ったテスト（配布の版に無い名前のもの）は「No.4 開始」のコミットに残るので、これで除ける。名前を決め打ちしない
 # 参照があるかを先に確かめる（無い参照を ls-tree に渡すと git が標準エラーに書き、PowerShell 5.1 では止まることがある）
 $baseRefs = @(
     "$(Invoke-GitUtf8 -C $root rev-parse --verify --quiet 'refs/remotes/origin/no4-start')".Trim(),
-    "$(Invoke-GitUtf8 -C $root log -1 --format=%H '--grep=^No\.4 start$')".Trim()
+    "$(Invoke-GitUtf8 -C $root log -1 --format=%H -E '--grep=^No\.4 (開始|start)$')".Trim()
 ) | Where-Object { $_ }
 $baseFiles = @($baseRefs | ForEach-Object { Invoke-GitUtf8 -C $root ls-tree -r --name-only $_ -- backend/tests } | Sort-Object -Unique)
 $testsDir = Join-Path $root 'backend\tests'
@@ -160,14 +160,14 @@ try {
     $sessions = 0
     $encoded = $root -replace '[^A-Za-z0-9]', '-'
 
-    # No.4 の開始時点は、04-01 で作る「No.4 start」のコミットの時刻とする
-    $startText = "$(Invoke-GitUtf8 -C $root log -1 --format=%cI '--grep=^No\.4 start$')".Trim()
+    # No.4 の開始時点は、04-01 で作る「No.4 開始」のコミットの時刻とする
+    $startText = "$(Invoke-GitUtf8 -C $root log -1 --format=%cI -E '--grep=^No\.4 (開始|start)$')".Trim()
     $start = $null
     if ($startText) {
         $start = [DateTimeOffset]::Parse($startText, [Globalization.CultureInfo]::InvariantCulture)
         Write-Host "会話の記録は、No.4 の開始（$($start.ToLocalTime().ToString('yyyy-MM-dd HH:mm'))）より後の部分だけを入れる"
     } else {
-        Write-Host '「No.4 start」のコミットが見つからないので、会話の記録をすべて入れる' -ForegroundColor Yellow
+        Write-Host '「No.4 開始」のコミットが見つからないので、会話の記録をすべて入れる' -ForegroundColor Yellow
     }
 
     function Get-LineTime($line) {
